@@ -1,0 +1,212 @@
+# ----------------------------------
+# 影响列表文件解析的选项
+# ----------------------------------
+with section("parse"):
+
+    # 指定自定义 CMake 函数的结构
+    additional_commands = {"foo": {"flags": ["BAR", "BAZ"], "kwargs": {"DEPENDS": "*", "HEADERS": "*", "SOURCES": "*"}}}
+
+    # 在可用的情况下，按命令覆盖配置
+    override_spec = {}
+
+    # 指定变量标签。
+    vartags = []
+
+    # 指定属性标签。
+    proptags = []
+
+
+# -----------------------------
+# 影响格式化的选项。
+# -----------------------------
+with section("format"):
+
+    # 禁用格式化，使 cmake-format 成为空操作
+    disable = False
+
+    # 允许格式化的 CMake 文件的宽度
+    line_width = 120
+
+    # 缩进时使用的空格数
+    tab_size = 4
+
+    # 如果为真，则使用制表符（utf-8 0x09）而不是 <tab_size> 个空格字符（utf-8 0x20）进行缩进。在需要分数制表符的情况下，分数制表符的行为由 <fractional_tab_policy> 控制
+    use_tabchars = False
+
+    # 如果 <use_tabchars> 为 True，则此变量的值指示如何处理分数缩进。如果设置为 'use-space'，分数缩进将保留为空格（utf-8 0x20）。如果设置为 `round-up`，分数缩进将替换为单个制表符（utf-8 0x09），有效地将列移动到下一个制表位
+    fractional_tab_policy = "use-space"
+
+    # 如果一个参数组包含的子组（parg 或 kwarg 组）多于这个数量，则强制其垂直布局。
+    max_subgroups_hwrap = 2
+
+    # 如果一个位置参数组包含的参数多于这个数量，则强制其垂直布局。
+    max_pargs_hwrap = 6
+
+    # 如果一个命令行位置参数组占用的行数超过这个数量且没有嵌套，则取消该布局（并嵌套）
+    max_rows_cmdline = 2
+
+    # 如果为真，则在控制流名称与其括号之间插入空格
+    separate_ctrl_name_with_space = False
+
+    # 如果为真，则在函数名称与其括号之间插入空格
+    separate_fn_name_with_space = False
+
+    # 如果语句被换行到多行，则将右括号单独放在一行上。
+    dangle_parens = False
+
+    # 如果右括号必须“悬垂”在单独的一行上，则将其对齐到这个参考点：`prefix`：语句的起始位置，`prefix-indent`：语句的起始位置加上一个缩进级别，`child`：对齐到参数的列
+    dangle_align = "prefix"
+
+    # 如果语句拼写长度（包括空格和括号）小于这个值，则强制拒绝嵌套布局。
+    min_prefix_chars = 4
+
+    # 如果语句拼写长度（包括空格和括号）大于制表宽度加上这个值，则强制拒绝非嵌套布局。
+    max_prefix_chars = 10
+
+    # 如果一个候选布局水平换行但超过这个行数，则拒绝该布局。
+    max_lines_hwrap = 2
+
+    # 输出中使用的行尾样式。
+    line_ending = "unix"
+
+    # 一致地格式化命令名称为 'lower' 或 'upper' 大小写
+    command_case = "lower"
+
+    # 一致地格式化关键字为 'lower' 或 'upper' 大小写
+    keyword_case = "upper"
+
+    # 一个始终应被换行的命令名称列表
+    always_wrap = []
+
+    # 如果为真，则已知可排序的参数列表将按字典顺序排序
+    enable_sort = True
+
+    # 如果为真，则解析器可以推断参数列表是否可排序（无需注解）。
+    autosort = False
+
+    # 默认情况下，如果 cmake-format 无法成功适应所需的行宽，它将应用最后一个最激进的尝试。但如果此标志为 True，则 cmake-format 将打印错误，以非零状态码退出，并不输出任何内容
+    require_valid_layout = False
+
+    # 一个映射布局节点到换行决策列表的字典。更多信息请参阅文档。
+    layout_passes = {}
+
+
+# ------------------------------------------------
+# 影响注释重新排版和格式化的选项。
+# ------------------------------------------------
+with section("markup"):
+
+    # 项目符号列表使用的字符
+    bullet_char = "*"
+
+    # 枚举列表中数字后使用的标点符号
+    enum_char = "."
+
+    # 如果启用注释标记，则不重新排版每个列表文件中的第一个注释块。使用此选项以保留版权/许可证声明的格式。
+    first_comment_is_literal = False
+
+    # 如果启用注释标记，则不重新排版匹配此（正则表达式）模式的任何注释块。默认为 `None`（禁用）。
+    literal_comment_pattern = None
+
+    # 匹配注释中预格式化围栏的正则表达式，默认为 ``r'^\s*([`~]{3}[`~]*)(.*)$'``
+    fence_pattern = "^\\s*([`~]{3}[`~]*)(.*)$"
+
+    # 匹配注释中分隔线的正则表达式，默认为 ``r'^\s*[^\w\s]{3}.*[^\w\s]{3}$'``
+    ruler_pattern = "^\\s*[^\\w\\s]{3}.*[^\\w\\s]{3}$"
+
+    # 如果注释行以这个模式开头，则明确表示它是前一个参数的尾随注释。默认为 '#<'
+    explicit_trailing_pattern = "#<"
+
+    # 如果注释行以至少这么多连续的井号字符开头，则不 lstrip() 它们。这允许懒惰的井号分隔线，其中第一个井号字符与空格不分开
+    hashruler_min_length = 10
+
+    # 如果为真，则在井号分隔线的第一个井号字符和剩余的井号字符之间插入空格，并将其长度标准化以填满列
+    canonicalize_hashrulers = True
+
+    # 启用注释标记解析和重新排版
+    enable_markup = True
+
+
+# ----------------------------
+# 影响 Linter 的选项
+# ----------------------------
+with section("lint"):
+
+    # 要禁用的 Lint 代码列表
+    disabled_codes = []
+
+    # 描述有效函数名称的正则表达式模式
+    function_pattern = "[0-9a-z_]+"
+
+    # 描述有效宏名称的正则表达式模式
+    macro_pattern = "[0-9A-Z_]+"
+
+    # 描述具有全局（缓存）作用域的变量的有效名称的正则表达式模式
+    global_var_pattern = "[A-Z][0-9A-Z_]+"
+
+    # 描述具有全局作用域（但内部语义）的变量的有效名称的正则表达式模式
+    internal_var_pattern = "_[A-Z][0-9A-Z_]+"
+
+    # 描述具有局部作用域的变量的有效名称的正则表达式模式
+    local_var_pattern = "[a-z][a-z0-9_]+"
+
+    # 描述私有目录变量的有效名称的正则表达式模式
+    private_var_pattern = "_[0-9a-z_]+"
+
+    # 描述公共目录变量的有效名称的正则表达式模式
+    public_var_pattern = "[A-Z][0-9A-Z_]+"
+
+    # 描述函数/宏参数和循环变量的有效名称的正则表达式模式
+    argument_var_pattern = "[a-z][a-z0-9_]+"
+
+    # 描述函数或宏中使用的关键字的有效名称的正则表达式模式
+    keyword_pattern = "[A-Z][0-9A-Z_]+"
+
+    # 在 C0201 启发式中，匹配多少个条件语句才认为循环是一个解析器。
+    max_conditionals_custom_parser = 2
+
+    # 要求语句之间至少有这么多行间距
+    min_statement_spacing = 1
+
+    # 要求语句之间最多有这么多行间距
+    max_statement_spacing = 2
+
+    # 最大返回语句数
+    max_returns = 6
+
+    # 最大分支数
+    max_branches = 12
+
+    # 最大参数数
+    max_arguments = 5
+
+    # 最大局部变量数
+    max_localvars = 15
+
+    # 最大语句数
+    max_statements = 50
+
+
+# -------------------------------
+# 影响文件编码的选项
+# -------------------------------
+with section("encode"):
+
+    # 如果为真，则在文件开头发出 Unicode 字节顺序标记（BOM）
+    emit_byteorder_mark = False
+
+    # 指定输入文件的编码。默认为 utf-8
+    input_encoding = "utf-8"
+
+    # 指定输出文件的编码。默认为 utf-8。注意 CMake 只声称支持 utf-8，所以使用其他编码时要小心
+    output_encoding = "utf-8"
+
+
+# -------------------------------------
+# 其他配置选项。
+# -------------------------------------
+with section("misc"):
+
+    # 包含任何按命令配置覆盖的字典。目前仅支持 `command_case`。
+    per_command = {}
+    
