@@ -393,7 +393,17 @@ void FMI_search::load_index()
     for (i = 2; i < 64; i++) {
         one_hot_mask_array[i] = (one_hot_mask_array[i - 1] >> 1) | base;
     }
-
+    memset(bwt_mask, 0, sizeof(bwt_mask));
+    for (i = 0; i < 64; i++) {
+        uint64_t offset = one_hot_mask_array[i];
+        for (int j = 0; j < 16; j++) {
+            bwt_mask[i][0] = (bwt_mask[i][0] << 1) | (offset >> 63 & 0X1L);
+            bwt_mask[i][1] = (bwt_mask[i][1] << 1) | (offset >> 62 & 0x1L);
+            bwt_mask[i][2] = (bwt_mask[i][2] << 1) | (offset >> 61 & 0x1L);
+            bwt_mask[i][3] = (bwt_mask[i][3] << 1) | (offset >> 60 & 0x1L);
+            offset = offset << 4;
+        }
+    }
     char *ref_file_name = file_name;
     // beCalls = 0;
     char cp_file_name[PATH_MAX];

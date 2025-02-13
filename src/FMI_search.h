@@ -134,6 +134,8 @@ private:
     CP_OCC *cp_occ;
     bool _reorder;
 
+    unsigned short bwt_mask[64][4];
+
     uint64_t *one_hot_mask_array;
 
     int64_t pac_seq_len(const char *fn_pac);
