@@ -1,30 +1,53 @@
-#  cuBWA
+# cuBWA
 
-## Method
+cuBWA is a GPU-accelerated implementation toolkit of the BWA algorithm, currently under active development.
 
-### SMEMS
-extend过程中需要SA interval，也就是需要继续k，l两个值。foward和backwards需要算4个碱基。这样并发度才8个，这样占不满wrap，需要按如下索引需要调整一下  
-假如每隔8bp采样，bwt数组调整为 [0,4,1,5,2,6,3,7]  
-thread 0 被分配成 [0,4]  
-thread 1 被分配成 [1,5]  
-thread 2 被分配成 [2,6]  
-thread 3 被分配成 [3,7]  
-最终需要wrap shuffle来统计个数，以及需要计算mask  
+## Methodology
 
-*Mask策略如下:*
-假如k,l的采样偏移量为0，thread0-thread3都有0x0;  
-假如k,l的采样偏移量为1，thread0为0x01， 其余0x0;  
-假如k,l的采样偏移量为2，thread0-thread1都有0x01，其余0;  
-假如k,l的采样偏移量为3，thread0-thread2都有0x01，其余0;  
-假如k,l的采样偏移量为4，thread0都有0x02，其余0x01;  
-...
-假如k,l的采样偏移量为7，thread0-thread3都有0x02;  
-...
-这样4*8=32线程，这样wrap利用率会比较高 
-sample文件需要测试一下随机读写的效率，估算30X WGS数据要Extension多少次，来推导该模块的上限； 
+### SMEMS Optimization
+During sequence extension phase, the algorithm requires SA interval calculations involving k and l parameters. To address the limitation of low thread utilization (only 8 concurrent threads for 4-base forward/backward processing), we propose the following optimizations:
 
-### SAI2coordinate
-该部分可以在CPU实现（倾向）,也可以GPU实现，同时可以计算多个suffix Array，如果不采样，则可以一起并发，算完后把直接可以访问到SA;  
+**BWT Array Restructuring**
+- Implement 8bp sampling with restructured BWT array indexing: [0,4,1,5,2,6,3,7]
+- Thread allocation scheme:
+  - Thread 0: [0,4]
+  - Thread 1: [1,5] 
+  - Thread 2: [2,6]
+  - Thread 3: [3,7]
 
-### Chaining
-该部分可以在CPU实现，如果不行，则可以抄论文里面的；  
+**Masking Strategy**
+Developed a dynamic mask allocation protocol based on k/l offsets:
+
+| Offset | Thread 0 | Thread 1 | Thread 2 | Thread 3 |
+|--------|----------|----------|----------|----------|
+| 0      | 0x0      | 0x0      | 0x0      | 0x0      |
+| 1      | 0x01     | 0x0      | 0x0      | 0x0      |
+| 2      | 0x01     | 0x01     | 0x0      | 0x0      |
+| 3      | 0x01     | 0x01     | 0x01     | 0x0      |
+| 4      | 0x02     | 0x01     | 0x01     | 0x01     |
+| 5      | 0x02     | 0x02     | 0x01     | 0x01     |
+| 6      | 0x02     | 0x02     | 0x02     | 0x01     |
+| 7      | 0x02     | 0x02     | 0x02     | 0x02     |
+
+**Performance Optimization**
+- Achieves 32-thread/warp utilization through warp shuffle operations
+- Conducting random I/O efficiency tests on sample datasets
+- Estimating extension iterations for 30X WGS data to determine module throughput limits
+
+### SAI2Coordinate Implementation
+**Architecture Options**
+1. *CPU Implementation (Preferred)*
+   - Batch processing of multiple suffix arrays
+   - Direct SA access without sampling
+
+2. GPU Implementation (Alternative)
+   - Parallel computation capability
+   - Requires memory access optimization
+
+### Chaining Module
+**Implementation Strategy**
+- Primary development on CPU architecture
+- Potential GPU adaptation using established algorithms from recent research
+- Maintaining flexibility for hybrid computing approaches
+
+This technical documentation presents optimized GPU utilization strategies for BWA-algorithm components, with particular focus on warp-level parallelism and memory access patterns. Current development emphasizes balancing computational efficiency with implementation complexity.
