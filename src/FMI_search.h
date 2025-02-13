@@ -91,7 +91,7 @@ typedef struct smem_struct
 class FMI_search : public indexEle
 {
 public:
-    FMI_search(const char *fname);
+    FMI_search(const char *fname, bool reorder);
     ~FMI_search();
     // int64_t beCalls;
 
@@ -132,12 +132,13 @@ private:
     uint32_t *sa_ls_word;
     int8_t *sa_ms_byte;
     CP_OCC *cp_occ;
+    bool _reorder;
 
     uint64_t *one_hot_mask_array;
 
     int64_t pac_seq_len(const char *fn_pac);
     void pac2nt(const char *fn_pac, std::string &reference_seq);
-    int build_fm_index(const char *ref_file_name, char *binary_seq, int64_t ref_seq_len, int64_t *sa_bwt, int64_t *count);
+    int build_fm_index(const char *ref_file_name, char *binary_seq, int64_t ref_seq_len, int64_t *sa_bwt, int64_t *count, bool reorder);
     SMEM backwardExt(SMEM smem, uint8_t a);
 };
 

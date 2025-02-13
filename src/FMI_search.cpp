@@ -42,7 +42,7 @@ extern "C"
 }
 #endif
 
-FMI_search::FMI_search(const char *fname)
+FMI_search::FMI_search(const char *fname, bool reorder)
 {
     fprintf(stderr, "* Entering FMI_search\n");
     // strcpy(file_name, fname);
@@ -54,6 +54,7 @@ FMI_search::FMI_search(const char *fname)
     sa_ms_byte = NULL;
     cp_occ = NULL;
     one_hot_mask_array = NULL;
+    _reorder = reorder;
 }
 
 FMI_search::~FMI_search()
@@ -135,7 +136,8 @@ void FMI_search::pac2nt(const char *fn_pac, std::string &reference_seq)
     free(buf2);
 }
 
-int FMI_search::build_fm_index(const char *ref_file_name, char *binary_seq, int64_t ref_seq_len, int64_t *sa_bwt, int64_t *count)
+int FMI_search::build_fm_index(const char *ref_file_name, char *binary_seq, int64_t ref_seq_len, int64_t *sa_bwt, int64_t *count,
+                               bool reorder)
 {
     printf("ref_seq_len = %ld\n", ref_seq_len);
     fflush(stdout);
@@ -221,16 +223,33 @@ int FMI_search::build_fm_index(const char *ref_file_name, char *binary_seq, int6
             cpo.one_hot_bwt_str[1] = 0;
             cpo.one_hot_bwt_str[2] = 0;
             cpo.one_hot_bwt_str[3] = 0;
-
-            for (j = 0; j < CP_BLOCK_SIZE; j++) {
-                cpo.one_hot_bwt_str[0] = cpo.one_hot_bwt_str[0] << 1;
-                cpo.one_hot_bwt_str[1] = cpo.one_hot_bwt_str[1] << 1;
-                cpo.one_hot_bwt_str[2] = cpo.one_hot_bwt_str[2] << 1;
-                cpo.one_hot_bwt_str[3] = cpo.one_hot_bwt_str[3] << 1;
-                uint8_t c = bwt[i + j];
-                // printf("c = %d\n", c);
-                if (c < 4) {
-                    cpo.one_hot_bwt_str[c] += 1;
+            if (reorder) {
+                for (j = 0; j < CP_BLOCK_SIZE; j++) {
+                    cpo.one_hot_bwt_str[0] = cpo.one_hot_bwt_str[0] << 1;
+                    cpo.one_hot_bwt_str[1] = cpo.one_hot_bwt_str[1] << 1;
+                    cpo.one_hot_bwt_str[2] = cpo.one_hot_bwt_str[2] << 1;
+                    cpo.one_hot_bwt_str[3] = cpo.one_hot_bwt_str[3] << 1;
+                    uint8_t c = bwt[i + j];
+                    // printf("c = %d\n", c);
+                    if (c < 4) {
+                        cpo.one_hot_bwt_str[c] += 1;
+                    }
+                }
+            }
+            else {
+                int strip_x = 4;
+                int strip_y = 16;
+                for (j = 0; j < strip_x; j++) {
+                    for (int32_t s = 0; s < strip_y; s++) {
+                        cpo.one_hot_bwt_str[0] = cpo.one_hot_bwt_str[0] << 1;
+                        cpo.one_hot_bwt_str[1] = cpo.one_hot_bwt_str[1] << 1;
+                        cpo.one_hot_bwt_str[2] = cpo.one_hot_bwt_str[2] << 1;
+                        cpo.one_hot_bwt_str[3] = cpo.one_hot_bwt_str[3] << 1;
+                        uint8_t c = bwt[s * strip_x + j];
+                        if (c < 4) {
+                            cpo.one_hot_bwt_str[c] += 1;
+                        }
+                    }
                 }
             }
 
@@ -357,7 +376,7 @@ int FMI_search::build_index()
     fprintf(stderr, "build suffix-array ticks = %llu\n", __rdtsc() - startTick);
     startTick = __rdtsc();
 
-    build_fm_index(prefix, binary_ref_seq, pac_len, suffix_array, count);
+    build_fm_index(prefix, binary_ref_seq, pac_len, suffix_array, count, _reorder);
     fprintf(stderr, "build fm-index ticks = %llu\n", __rdtsc() - startTick);
     _mm_free(binary_ref_seq);
     _mm_free(suffix_array);
