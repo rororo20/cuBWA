@@ -65,6 +65,10 @@ int main(int argc, char *argv[])
     proc_freq = __rdtsc() - tim;
 
     int ret = -1;
+    if (argc < 2) {
+        fprintf(stderr, "cuBWA tools:\n");
+        return -1;
+    }
     if (strcmp(argv[1], "index") == 0) {
         uint64_t tim = __rdtsc();
         ret = bwa_index(argc - 1, argv + 1);
