@@ -28,6 +28,7 @@ Authors: Sanchit Misra <sanchit.misra@intel.com>; Vasimuddin Md <vasimuddin.md@i
 *****************************************************************************************/
 
 #include <stdio.h>
+#include <device_launch_parameters.h>
 #include "sais.h"
 #include "FMI_search.h"
 #include "memcpy_bwamem.h"
@@ -996,7 +997,7 @@ int64_t FMI_search::get_sa_entry_compressed(int64_t pos, int tid)
 #if SA_COMPRESSION
         int64_t sa_entry = sa_ms_byte[pos >> SA_COMPX];
 #else
-        int64_t sa_entry = sa_ms_byte[pos];     // simulation
+        int64_t sa_entry = sa_ms_byte[pos];  // simulation
 #endif
 
         sa_entry = sa_entry << 32;
@@ -1046,7 +1047,7 @@ int64_t FMI_search::get_sa_entry_compressed(int64_t pos, int tid)
 #if SA_COMPRESSION
         int64_t sa_entry = sa_ms_byte[sp >> SA_COMPX];
 #else
-        int64_t sa_entry = sa_ms_byte[sp];      // simultion
+        int64_t sa_entry = sa_ms_byte[sp];  // simultion
 #endif
 
         sa_entry = sa_entry << 32;
@@ -1054,7 +1055,7 @@ int64_t FMI_search::get_sa_entry_compressed(int64_t pos, int tid)
 #if SA_COMPRESSION
         sa_entry = sa_entry + sa_ls_word[sp >> SA_COMPX];
 #else
-        sa_entry = sa_entry + sa_ls_word[sp];   // simulation
+        sa_entry = sa_entry + sa_ls_word[sp];  // simulation
 #endif
 
         sa_entry += offset;
@@ -1247,4 +1248,9 @@ void FMI_search::get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, i
 
     _mm_free(pos_ar);
     _mm_free(map_ar);
+}
+
+__global__ void getSMEMs_cuda(int *data, int size)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
 }

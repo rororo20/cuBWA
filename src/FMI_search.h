@@ -37,6 +37,8 @@ Authors: Sanchit Misra <sanchit.misra@intel.com>; Vasimuddin Md <vasimuddin.md@i
 #include <immintrin.h>
 #include <limits.h>
 #include <fstream>
+#include <cuda_runtime.h>
+#include <curand_kernel.h>
 
 #include "read_index_ele.h"
 #include "bwa.h"
