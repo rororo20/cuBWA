@@ -1250,6 +1250,10 @@ void FMI_search::get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, i
     _mm_free(map_ar);
 }
 
+#define IS_K(tid)                (tid < 15)
+#define GET_GROUP_THREAD_ID(tid) (tid & 0x3)
+#define GET_BASE_PAIR(tid)       ((tid >> 2) & 0x3)
+
 /**
  * @brief backwardExt GPU implement
  * @param cp_occ  checkpoint occ scalar
@@ -1270,42 +1274,39 @@ __device__ void getOCC4Back(int tid, CP_OCC *cp_occ, SMEM &curr, unsigned short 
     uint8_t onehot = 0;
     uint8_t bitLast = 0;
     uint8_t count = 0;
-    /*
-     * 0-15  threads caculate K
-     * 16-31 threads caculate L
-     */
-    if (tid < 15) {
-        mask = bwt_mask[curr.k & 0X3f][(tid >> 2) & 0x3];
-        bitLast = ((curr.k & 0X3f) + 1) >> 2;
-        onehot = cp_occ[curr.k >> 6].one_hot_bwt_str[(tid >> 2) & 0x3];
+
+    if (IS_K(tid)) {
+        mask = bwt_mask[curr.k & CP_MASK][GET_GROUP_THREAD_ID(tid)];
+        bitLast = ((curr.k & CP_MASK) + 1) >> 2;
+        onehot = cp_occ[curr.k >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid)];
     }
 
     else {
-        mask = bwt_mask[curr.l & 0X3f][(tid >> 2) & 0x3];
-        bitLast = ((curr.l & 0X3f) + 1) >> 2;
+        mask = bwt_mask[curr.l & CP_MASK][GET_GROUP_THREAD_ID(tid)];
+        bitLast = ((curr.l & CP_MASK) + 1) >> 2;
+        onehot = cp_occ[curr.l >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid)];
     }
 
     for (int i = 0; i < bitLast; i++) {
         count += (onehot & 1);
         onehot = onehot >> 1;
-        onehot = cp_occ[curr.k >> 6].one_hot_bwt_str[(tid >> 2) & 0x3];
     }
 
-    mask = ((1 << 4) - 1) << ((tid >> 2) << 2);  // 生成组掩码
+    mask = ((1 << 4) - 1) << ((tid >> 2) << 2);  //  Generate Wrap Mask for sync add count
 
     count += __shfl_xor_sync(mask, count, 1);
     count += __shfl_xor_sync(mask, count, 2);
-    if ((tid & 0x3) == 0) {
-        if (tid < 15) {  // update k
-            k[(tid >> 2) & 0x3] = count + cp_occ[curr.k >> 6].cp_count[(tid >> 2) & 0x3];
+    if ((GET_GROUP_THREAD_ID(tid)) == 0) {
+        if (IS_K(tid)) {  // update k
+            k[GET_BASE_PAIR(tid)] = count + cp_occ[curr.k >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
         }
         else {  // update L
-            l[(tid >> 2) & 0x3] = count + cp_occ[curr.k >> 6].cp_count[(tid >> 2) & 0x3];
+            l[GET_BASE_PAIR(tid)] = count + cp_occ[curr.l >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
         }
     }
     __syncthreads();
-    if ((tid & 0x7) == 0) {
-        s[tid >> 3] = l[tid >> 3] - s[tid >> 3];
+    if (tid < 4) {
+        s[tid] = l[tid] - s[tid];
     }
     __syncthreads();
 }
