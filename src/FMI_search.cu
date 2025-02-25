@@ -1250,7 +1250,96 @@ void FMI_search::get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, i
     _mm_free(map_ar);
 }
 
-__global__ void getSMEMs_cuda(int *data, int size)
+/**
+ * @brief backwardExt GPU implement
+ * @param cp_occ  checkpoint occ scalar
+ * @param bwt_mask  bwt mask array
+ * @param seq  multipy sequence 2bit encode
+ * @param n_seq  number of sequence
+ * @param n_seq  i th sequence's length
+ * @param offset  i th sequence's offset
+ * @param matchArray  match SMEMS result array
+ * @param maxArrayLength  max array length
+ * @return void
+ */
+
+__device__ void getOCC4Back(int tid, CP_OCC *cp_occ, SMEM &curr, unsigned short bwt_mask[64][4], int *k, int *l, int *s)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    SMEM result;
+    unsigned short mask = 0;
+    uint8_t onehot = 0;
+    uint8_t bitLast = 0;
+    uint8_t count = 0;
+    /*
+     * 0-15  threads caculate K
+     * 16-31 threads caculate L
+     */
+    if (tid < 15) {
+        mask = bwt_mask[curr.k & 0X3f][(tid >> 2) & 0x3];
+        bitLast = ((curr.k & 0X3f) + 1) >> 2;
+        onehot = cp_occ[curr.k >> 6].one_hot_bwt_str[(tid >> 2) & 0x3];
+    }
+
+    else {
+        mask = bwt_mask[curr.l & 0X3f][(tid >> 2) & 0x3];
+        bitLast = ((curr.l & 0X3f) + 1) >> 2;
+    }
+
+    for (int i = 0; i < bitLast; i++) {
+        count += (onehot & 1);
+        onehot = onehot >> 1;
+        onehot = cp_occ[curr.k >> 6].one_hot_bwt_str[(tid >> 2) & 0x3];
+    }
+
+    mask = ((1 << 4) - 1) << ((tid >> 2) << 2);  // 生成组掩码
+
+    count += __shfl_xor_sync(mask, count, 1);
+    count += __shfl_xor_sync(mask, count, 2);
+    if ((tid & 0x3) == 0) {
+        if (tid < 15) {  // update k
+            k[(tid >> 2) & 0x3] = count + cp_occ[curr.k >> 6].cp_count[(tid >> 2) & 0x3];
+        }
+        else {  // update L
+            l[(tid >> 2) & 0x3] = count + cp_occ[curr.k >> 6].cp_count[(tid >> 2) & 0x3];
+        }
+    }
+    __syncthreads();
+    if ((tid & 0x7) == 0) {
+        s[tid >> 3] = l[tid >> 3] - s[tid >> 3];
+    }
+    __syncthreads();
+}
+
+__device__ void stepOne(int tid) {}
+
+__device__ void stepTwo(int tid) {}
+
+__device__ void stepLast(int tid) {}
+
+/**
+ * @brief kernel of SMEMS CORE implement
+ * @param cp_occ  checkpoint occ scalar
+ * @param bwt_mask  bwt mask array
+ * @param seq  multipy sequence 2bit encode
+ * @param n_seq  number of sequence
+ * @param n_seq  i th sequence's length
+ * @param offset  i th sequence's offset
+ * @param matchArray  match SMEMS result array
+ * @param maxArrayLength  max array length
+ * @param
+ * @return void
+ */
+__global__ void getSMEMs_cuda(CP_OCC *cp_occ, unsigned short bwt_mask[64][4], uint8_t *seq, int n_seq, int *offset, int64_t cout[5],
+                              SMEM *matchArray)
+{
+    int reads_idx = blockIdx.x;
+
+    int tid = threadIdx.x;
+
+    if (reads_idx >= n_seq) {
+        return;
+    }
+    stepOne(tid);
+    stepTwo(tid);
+    stepLast(tid);
 }
