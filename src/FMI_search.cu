@@ -1313,12 +1313,15 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short bwt
         s[tid] = l[tid] - s[tid];
     }
     __syncthreads();
-    l[3] = curr.l + ((curr.k <= sentinel_index) && ((curr.k + curr.s) > sentinel_index));
-    l[2] = l[3] + s[3];
-    l[1] = l[2] + s[2];
-    l[0] = l[1] + s[1];
+    if (tid == 0) {
+        l[3] = curr.l + ((curr.k <= sentinel_index) && ((curr.k + curr.s) > sentinel_index));
+        l[2] = l[3] + s[3];
+        l[1] = l[2] + s[2];
+        l[0] = l[1] + s[1];
 
-    smems[base_idx].k = k[base];
-    smems[base_idx].l = l[base];
-    smems[base_idx].s = s[base];
+        smems[base_idx].k = k[base];
+        smems[base_idx].l = l[base];
+        smems[base_idx].s = s[base];
+    }
+    __syncthreads();
 }
