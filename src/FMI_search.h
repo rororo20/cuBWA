@@ -88,6 +88,13 @@ typedef struct smem_struct
     int64_t k, l, s;
 } SMEM;
 
+typedef struct smem_struct_cuda
+{
+#ifdef DEBUG
+    uint64_t info;  // for debug
+#endif
+    int64_t k, l, s;
+} SMEM_CUDA;
 #define SAL_PFD 16
 
 class FMI_search : public indexEle

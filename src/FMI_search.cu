@@ -1258,25 +1258,27 @@ void FMI_search::get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, i
  * @brief backwardExt GPU implement
  * @param cp_occ  checkpoint occ scalar
  * @param bwt_mask  bwt mask array
- * @param seq  multipy sequence 2bit encode
- * @param n_seq  number of sequence
- * @param n_seq  i th sequence's length
- * @param offset  i th sequence's offset
- * @param matchArray  match SMEMS result array
- * @param maxArrayLength  max array length
+ * @param bases  multipy base pairs 2bit encode
+ * @param size  number of base pairs
+ * @param sentinel_index  sentinel index in suffix array
  * @return void
  */
 
-__device__ void getOCC4Back(int tid, CP_OCC *cp_occ, SMEM &curr, unsigned short bwt_mask[64][4], int64_t *k, int64_t *l, int64_t *s,
-                            uint8_t base)
+__global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short bwt_mask[64][4], uint8_t *bases, int size,
+                            int64_t sentinel_index)
 {
-    int64_t sentinel_index = 0;
-    SMEM result;
+    int base_idx = blockIdx.x;
+    int tid = threadIdx.x;
     unsigned short mask = 0;
     unsigned short onehot = 0;
     uint8_t bitLast = 0;
     uint8_t count = 0;
-
+    __shared__ int64_t k[4], l[4], s[4];
+    if (base_idx >= size) {
+        return;
+    }
+    uint8_t base = bases[base_idx];
+    SMEM_CUDA curr = smems[base_idx];
     if (IS_K(tid)) {
         mask = bwt_mask[curr.k & CP_MASK][GET_GROUP_THREAD_ID(tid)];
         bitLast = ((curr.k & CP_MASK) + 1) >> 2;
@@ -1316,80 +1318,7 @@ __device__ void getOCC4Back(int tid, CP_OCC *cp_occ, SMEM &curr, unsigned short 
     l[1] = l[2] + s[2];
     l[0] = l[1] + s[1];
 
-    curr.k = k[base];
-    curr.l = l[base];
-    curr.s = s[base];
-}
-__device__ void bwt_smem1(int tid, int &start, CP_OCC *cp_occ, unsigned short bwt_mask[64][4], uint8_t *seq, int &l_seq, int64_t count[5],
-                          SMEM *matchArray, int &matchNumber)
-
-{
-    SMEM smem;
-
-    __shared__ int64_t k[4], l[4], s[4];
-    // __shared__ SMEM prevArray[l_seq];
-    uint8_t base = seq[start];
-    smem.m = start;
-    smem.n = start;
-    smem.k = count[base];
-    smem.l = count[3 - base];
-    smem.s = count[base + 1] - count[base];
-    for (int i = start + 1; i < l_seq; i++) {
-        if (seq[start] < 4) {
-            SMEM smem_ = smem;
-            smem_.k = smem.l;
-            smem_.l = smem.k;
-            getOCC4Back(tid, cp_occ, smem_, bwt_mask, k, l, s, base);
-            int32_t s_neq_mask = smem_.s != smem.s;
-            smem.s = smem_.s;
-            smem.k = smem_.l;
-            smem.l = smem_.k;
-            smem.m = smem_.m;
-            smem.n = i;
-        }
-    }
-}
-
-__device__ void first_pass(int tid, CP_OCC *cp_occ, unsigned short bwt_mask[64][4], uint8_t *seq, int &l_seq, int64_t count[5],
-                           SMEM *matchArray, int &matchNumber)
-{
-    int x = 0;
-    while (x < l_seq) {
-        if (seq[x] < 4) {
-            bwt_smem1(tid, x, cp_occ, bwt_mask, seq, l_seq, count, matchArray, matchNumber);
-        }
-        else {
-            x++;
-        }
-    };
-}
-
-__device__ void stepLast(int tid) {}
-
-/**
- * @brief kernel of SMEMS CORE implement
- * @param cp_occ  checkpoint occ scalar
- * @param bwt_mask  bwt mask array
- * @param seq  multipy sequence 2bit encode
- * @param n_seq  number of sequence
- * @param l_seq  i th sequence's length
- * @param offset  i th sequence's offset
- * @param matchArray  match SMEMS result array
- * @param matchNumber   match SMES Result's number
- * @param maxArrayLength  max array length
- * @param
- * @return void
- */
-__global__ void getSMEMs_cuda(CP_OCC *cp_occ, unsigned short bwt_mask[64][4], uint8_t *seq, int n_seq, int *l_seq, int *offset,
-                              int64_t cout[5], SMEM *matchArray, int *matchNumber, int maxArrayLength)
-{
-    int reads_idx = blockIdx.x;
-
-    int tid = threadIdx.x;
-
-    if (reads_idx >= n_seq) {
-        return;
-    }
-    first_pass(tid, cp_occ, bwt_mask, seq + offset[reads_idx], l_seq[reads_idx], cout, matchArray, matchNumber[reads_idx * maxArrayLength]);
-    stepLast(tid);
+    smems[base_idx].k = k[base];
+    smems[base_idx].l = l[base];
+    smems[base_idx].s = s[base];
 }
