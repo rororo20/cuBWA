@@ -5,13 +5,13 @@
 #include <unistd.h>
 #include <time.h>
 #include <zlib.h>
-#include "bntseq.h"
-#include "bwa.h"
-#include "bwt.h"
-#include "FMI_search.h"
-#include "macro.h"
+#include "smems/bntseq.h"
+#include "smems/bwa.h"
+#include "smems/bwt.h"
+#include "smems/FMI_search.h"
+#include "smems/macro.h"
 #include "string.h"
-#include "utils.h"
+#include "smems/utils.h"
 
 uint64_t proc_freq, tprof[LIM_R][LIM_C], prof[LIM_R];
 

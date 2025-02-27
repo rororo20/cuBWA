@@ -9,23 +9,16 @@ include_directories(
     ext/safestringlib/include
 )
 
-set(MEM2_FM_INDEX_SOURCE
-    memcpy_bwamem.cpp
-    FMI_search.cu
-    read_index_ele.cpp
-    utils.cpp
-    bntseq.cpp
-)
 
 set(CMAKE_CUDA_STANDARD 11)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 add_subdirectory(ext/safestringlib)
+add_subdirectory(smems)
 
 add_executable(
     cuBWA
     main.cc
-    ${MEM2_FM_INDEX_SOURCE}
 )
 
 target_include_directories(cuBWA PUBLIC ext/safestringlib/include)
@@ -40,7 +33,8 @@ set_target_properties(cuBWA PROPERTIES CUDA_ARCHITECTURES 70)
 target_link_libraries(cuBWA 
     PRIVATE 
     safestring_shared
-    m 
+    smems
+    m
     z
     CUDA::cudart
 )
