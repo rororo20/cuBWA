@@ -23,6 +23,50 @@ void generate_one_hot_mask(unsigned short bwt_mask[][4])
         }
     }
 }
+
+void generate_occ_cpp(CP_OCC &cpo, char base[64], int64_t cp_count[4])
+{
+    uint8_t enc_bases[64];
+    cpo.cp_count[0] = cp_count[0];
+    cpo.cp_count[1] = cp_count[1];
+    cpo.cp_count[2] = cp_count[2];
+    cpo.cp_count[3] = cp_count[3];
+
+    for (int i = 0; i < 64; i++) {
+        switch (base[i]) {
+            case 'A':
+                /* code */
+                enc_bases[i] = 0;
+                break;
+            case 'C':
+                enc_bases[i] = 1;
+                break;
+            case 'G':
+                enc_bases[i] = 2;
+                break;
+            case 'T':
+                enc_bases[i] = 3;
+                break;
+            default:
+                enc_bases[i] = 4;
+                break;
+        }
+    }
+    cpo.one_hot_bwt_str[0] = 0;
+    cpo.one_hot_bwt_str[1] = 0;
+    cpo.one_hot_bwt_str[2] = 0;
+    cpo.one_hot_bwt_str[3] = 0;
+    for (int i = 0; i < 64; i++) {
+        cpo.one_hot_bwt_str[0] = cpo.one_hot_bwt_str[0] << 1;
+        cpo.one_hot_bwt_str[1] = cpo.one_hot_bwt_str[1] << 1;
+        cpo.one_hot_bwt_str[2] = cpo.one_hot_bwt_str[2] << 1;
+        cpo.one_hot_bwt_str[3] = cpo.one_hot_bwt_str[3] << 1;
+        uint8_t c = enc_bases[i];
+        if (c < 4) {
+            cpo.one_hot_bwt_str[c] += 1;
+        }
+    }
+}
 class BackwardTest : public ::testing::Test
 {
 protected:
@@ -41,10 +85,17 @@ protected:
     void TearDown() {}
     static unsigned short bwt_mask[64][4];
     static unsigned short *bwt_mask_device;
+    static CP_OCC *cpos;
+    static CP_OCC *cpos_device;
+    static int cpo_size;
 };
 
 unsigned short BackwardTest::bwt_mask[64][4];
 unsigned short *BackwardTest::bwt_mask_device = NULL;
+CP_OCC *BackwardTest::cpos = NULL;
+CP_OCC *BackwardTest::cpos_device = NULL;
+
+int BackwardTest::cpo_size = 1024 * 256;
 
 TEST_F(BackwardTest, testcase1)
 {
@@ -152,4 +203,8 @@ TEST_F(BackwardTest, testcase1)
     EXPECT_EQ(bwt_mask[63][1], 0XFFFF);
     EXPECT_EQ(bwt_mask[63][2], 0XFFFF);
     EXPECT_EQ(bwt_mask[63][3], 0XFFFE);
+}
+TEST_F(BackwardTest, testcase2)
+{
+    ;
 }

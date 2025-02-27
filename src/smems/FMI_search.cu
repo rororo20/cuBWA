@@ -224,7 +224,7 @@ int FMI_search::build_fm_index(const char *ref_file_name, char *binary_seq, int6
             cpo.one_hot_bwt_str[1] = 0;
             cpo.one_hot_bwt_str[2] = 0;
             cpo.one_hot_bwt_str[3] = 0;
-            if (reorder) {
+            if (!reorder) {
                 for (j = 0; j < CP_BLOCK_SIZE; j++) {
                     cpo.one_hot_bwt_str[0] = cpo.one_hot_bwt_str[0] << 1;
                     cpo.one_hot_bwt_str[1] = cpo.one_hot_bwt_str[1] << 1;
