@@ -10,7 +10,7 @@ include_directories(
 )
 
 
-set(CMAKE_CUDA_STANDARD 11)
+set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 add_subdirectory(ext/safestringlib)
