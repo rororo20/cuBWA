@@ -153,4 +153,6 @@ private:
     SMEM backwardExt(SMEM smem, uint8_t a);
 };
 
+__global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bwt_mask, uint8_t *bases, int size, int64_t sentinel_index);
+
 #endif

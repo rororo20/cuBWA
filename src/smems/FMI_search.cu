@@ -1264,8 +1264,7 @@ void FMI_search::get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, i
  * @return void
  */
 
-__global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short bwt_mask[64][4], uint8_t *bases, int size,
-                            int64_t sentinel_index)
+__global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bwt_mask, uint8_t *bases, int size, int64_t sentinel_index)
 {
     int base_idx = blockIdx.x;
     int tid = threadIdx.x;
@@ -1280,15 +1279,15 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short bwt
     uint8_t base = bases[base_idx];
     SMEM_CUDA curr = smems[base_idx];
     if (IS_K(tid)) {
-        mask = bwt_mask[curr.k & CP_MASK][GET_GROUP_THREAD_ID(tid)];
+        mask = bwt_mask[(curr.k & CP_MASK) << 2 + GET_GROUP_THREAD_ID(tid)];
         bitLast = ((curr.k & CP_MASK) + 1) >> 2;
         onehot = cp_occ[curr.k >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid)] >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4);
     }
 
     else {
-        mask = bwt_mask[curr.l & CP_MASK][GET_GROUP_THREAD_ID(tid)];
-        bitLast = ((curr.l & CP_MASK) + 1) >> 2;
-        onehot = cp_occ[curr.l >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid) >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4)];
+        mask = bwt_mask[((curr.k + curr.s) & CP_MASK) << 2 + GET_GROUP_THREAD_ID(tid)];
+        bitLast = (((curr.k + curr.s) & CP_MASK) + 1) >> 2;
+        onehot = cp_occ[(curr.k + curr.s) >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid) >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4)];
     }
 
     for (int i = 0; i < bitLast; i++) {
@@ -1305,7 +1304,7 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short bwt
             k[GET_BASE_PAIR(tid)] = count + cp_occ[curr.k >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
         }
         else {  // update L
-            l[GET_BASE_PAIR(tid)] = count + cp_occ[curr.l >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
+            l[GET_BASE_PAIR(tid)] = count + cp_occ[(curr.k + curr.s) >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
         }
     }
     __syncthreads();
@@ -1319,7 +1318,7 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short bwt
         l[1] = l[2] + s[2];
         l[0] = l[1] + s[1];
 
-        smems[base_idx].k = k[base];
+        smems[base_idx].k = k[base];  // Need add COUNT
         smems[base_idx].l = l[base];
         smems[base_idx].s = s[base];
     }
