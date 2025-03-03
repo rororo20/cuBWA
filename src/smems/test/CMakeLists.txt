@@ -4,7 +4,7 @@ set(PACK_NAME smems_test)
 set(PACK_SRC test_occ4.cu)
 set(PACK_INCLUDE_DIR ..)
 # set(PACK_LINK_DIR ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
-set(PACK_LINK_LIB gtest_main gtest smems)
+set(PACK_LINK_LIB gtest_main gtest smems z)
 
 
 add_executable(${PACK_NAME} ${PACK_SRC})

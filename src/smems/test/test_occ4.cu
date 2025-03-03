@@ -1,6 +1,8 @@
 #include "FMI_search.h"
 #include "gtest/gtest.h"
+#include <map>
 
+#define THREADS_PER_BLOCK 32
 void generate_one_hot_mask(unsigned short bwt_mask[][4])
 {
     uint64_t *one_hot_mask_array = (uint64_t *)_mm_malloc(64 * sizeof(uint64_t), 64);
@@ -24,7 +26,7 @@ void generate_one_hot_mask(unsigned short bwt_mask[][4])
     }
 }
 
-void generate_occ_cpp(CP_OCC &cpo, char base[64], int64_t cp_count[4])
+void generate_occ_cpp(CP_OCC &cpo, char base[65], int64_t cp_count[4])
 {
     uint8_t enc_bases[64];
     cpo.cp_count[0] = cp_count[0];
@@ -85,17 +87,13 @@ protected:
     void TearDown() {}
     static unsigned short bwt_mask[64][4];
     static unsigned short *bwt_mask_device;
-    static CP_OCC *cpos;
-    static CP_OCC *cpos_device;
-    static int cpo_size;
+    // static CP_OCC *cpos;
+    // static CP_OCC *cpos_device;
+    // static int cpo_size;
 };
 
 unsigned short BackwardTest::bwt_mask[64][4];
 unsigned short *BackwardTest::bwt_mask_device = NULL;
-CP_OCC *BackwardTest::cpos = NULL;
-CP_OCC *BackwardTest::cpos_device = NULL;
-
-int BackwardTest::cpo_size = 1024 * 256;
 
 TEST_F(BackwardTest, testcase1)
 {
@@ -206,5 +204,72 @@ TEST_F(BackwardTest, testcase1)
 }
 TEST_F(BackwardTest, testcase2)
 {
-    ;
+    char arr[65] = "ACGTACACGGTTTTTAAAAGGGGCCCCTTTTACGTACGTTGCATGCACGTATTACAACGATTAC";
+    /*result*/
+    std::map<int, std::vector<int>> result = {
+        {0, {1, 0, 0, 0}},      {1, {1, 1, 0, 0}},      {2, {1, 1, 1, 0}},      {3, {1, 1, 1, 1}},      {4, {2, 1, 1, 1}},
+        {5, {2, 2, 1, 1}},      {6, {3, 2, 1, 1}},      {7, {3, 3, 1, 1}},      {8, {3, 3, 2, 1}},      {9, {3, 3, 3, 1}},
+        {10, {3, 3, 3, 2}},     {11, {3, 3, 3, 3}},     {12, {3, 3, 3, 4}},     {13, {3, 3, 3, 5}},     {14, {3, 3, 3, 6}},
+        {15, {4, 3, 3, 6}},     {16, {5, 3, 3, 6}},     {17, {6, 3, 3, 6}},     {18, {7, 3, 3, 6}},     {19, {7, 3, 4, 6}},
+        {20, {7, 3, 5, 6}},     {21, {7, 3, 6, 6}},     {22, {7, 3, 7, 6}},     {23, {7, 4, 7, 6}},     {24, {7, 5, 7, 6}},
+        {25, {7, 6, 7, 6}},     {26, {7, 7, 7, 6}},     {27, {7, 7, 7, 7}},     {28, {7, 7, 7, 8}},     {29, {7, 7, 7, 9}},
+        {30, {7, 7, 7, 10}},    {31, {8, 7, 7, 10}},    {32, {8, 8, 7, 10}},    {33, {8, 8, 8, 10}},    {34, {8, 8, 8, 11}},
+        {35, {9, 8, 8, 11}},    {36, {9, 9, 8, 11}},    {37, {9, 9, 9, 11}},    {38, {9, 9, 9, 12}},    {39, {9, 9, 9, 13}},
+        {40, {9, 9, 10, 13}},   {41, {9, 10, 10, 13}},  {42, {10, 10, 10, 13}}, {43, {10, 10, 10, 14}}, {44, {10, 10, 11, 14}},
+        {45, {10, 11, 11, 14}}, {46, {11, 11, 11, 14}}, {47, {11, 12, 11, 14}}, {48, {11, 12, 12, 14}}, {49, {11, 12, 12, 15}},
+        {50, {12, 12, 12, 15}}, {51, {12, 12, 12, 16}}, {52, {12, 12, 12, 17}}, {53, {13, 12, 12, 17}}, {54, {13, 13, 12, 17}},
+        {55, {14, 13, 12, 17}}, {56, {15, 13, 12, 17}}, {57, {15, 14, 12, 17}}, {58, {15, 14, 13, 17}}, {59, {16, 14, 13, 17}},
+        {60, {16, 14, 13, 18}}, {61, {16, 14, 13, 19}}, {62, {17, 14, 13, 19}}, {63, {17, 15, 13, 19}}};
+
+    CP_OCC *cp = (CP_OCC *)malloc(1024 * sizeof(CP_OCC));
+    CP_OCC *cp_device = NULL;
+    int64_t count1[] = {0, 0, 0, 0};
+    int base_count = 4;
+    int N = CP_BLOCK_SIZE * 4;
+    generate_occ_cpp(cp[0], arr, count1);
+    generate_occ_cpp(cp[1], arr, count1);
+
+    cudaMalloc(&cp_device, 1024 * sizeof(CP_OCC));
+    cudaMemcpy(cp_device, cp, 1024 * sizeof(CP_OCC), cudaMemcpyHostToDevice);
+
+    SMEM_CUDA *smems = (SMEM_CUDA *)malloc(sizeof(SMEM_CUDA) * N);
+    SMEM_CUDA *smems_device = NULL;
+
+    for (int i = 0; i < N; i++) {
+        smems[i].k = i;
+        smems[i].l = 0;
+        smems[i].s = 0;
+    }
+    cudaMalloc(&smems_device, N * sizeof(SMEM_CUDA));
+    cudaMemcpy(smems_device, smems, N * sizeof(SMEM_CUDA), cudaMemcpyHostToDevice);
+
+    uint8_t *bases = (uint8_t *)malloc(sizeof(uint8_t) * N);
+    uint8_t *bases_deviece = NULL;
+
+    for (int i = 0; i < CP_BLOCK_SIZE; i++) {
+        for (int j = 0; j < base_count; j++) {
+            bases[i * base_count + j] = j;
+        }
+    }
+    cudaMalloc(&bases_deviece, N * sizeof(uint8_t));
+    cudaMemcpy(bases_deviece, bases, N * sizeof(uint8_t), cudaMemcpyHostToDevice);
+
+    dim3 block(THREADS_PER_BLOCK);
+    dim3 grid(1024 * 1024);
+    getOCC4Back<<<grid, block>>>(cp_device, smems_device, bwt_mask_device, bases_deviece, N, 1);
+
+    cudaMemcpy(smems, smems_device, N * sizeof(SMEM_CUDA), cudaMemcpyDeviceToHost);
+
+    for (int i = 1; CP_BLOCK_SIZE; i++) {
+        for (int j = 0; j < base_count; j++) {
+            EXPECT_EQ(smems[i * base_count + j].k, result[i][j]);
+            EXPECT_EQ(smems[i * base_count + j].s, 0);
+        }
+    }
+    cudaFree(smems_device);
+    cudaFree(cp_device);
+    cudaFree(bases_deviece);
+    free(smems);
+    free(cp);
+    free(bases);
 }
