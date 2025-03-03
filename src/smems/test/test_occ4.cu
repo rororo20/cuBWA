@@ -1,7 +1,14 @@
 #include "FMI_search.h"
 #include "gtest/gtest.h"
 #include <map>
-
+#define CHECK(call)                                                     \
+    do {                                                                \
+        const cudaError_t error_code = call;                            \
+        if (error_code != cudaSuccess) {                                \
+            printf("CUDA Error: %s\n", cudaGetErrorString(error_code)); \
+            exit(EXIT_FAILURE);                                         \
+        }                                                               \
+    } while (0)
 #define THREADS_PER_BLOCK 32
 void generate_one_hot_mask(unsigned short bwt_mask[][4])
 {
@@ -58,14 +65,18 @@ void generate_occ_cpp(CP_OCC &cpo, char base[65], int64_t cp_count[4])
     cpo.one_hot_bwt_str[1] = 0;
     cpo.one_hot_bwt_str[2] = 0;
     cpo.one_hot_bwt_str[3] = 0;
-    for (int i = 0; i < 64; i++) {
-        cpo.one_hot_bwt_str[0] = cpo.one_hot_bwt_str[0] << 1;
-        cpo.one_hot_bwt_str[1] = cpo.one_hot_bwt_str[1] << 1;
-        cpo.one_hot_bwt_str[2] = cpo.one_hot_bwt_str[2] << 1;
-        cpo.one_hot_bwt_str[3] = cpo.one_hot_bwt_str[3] << 1;
-        uint8_t c = enc_bases[i];
-        if (c < 4) {
-            cpo.one_hot_bwt_str[c] += 1;
+    int strip_x = 4;
+    int strip_y = 16;
+    for (int j = 0; j < strip_x; j++) {
+        for (int32_t s = 0; s < strip_y; s++) {
+            cpo.one_hot_bwt_str[0] = cpo.one_hot_bwt_str[0] << 1;
+            cpo.one_hot_bwt_str[1] = cpo.one_hot_bwt_str[1] << 1;
+            cpo.one_hot_bwt_str[2] = cpo.one_hot_bwt_str[2] << 1;
+            cpo.one_hot_bwt_str[3] = cpo.one_hot_bwt_str[3] << 1;
+            uint8_t c = enc_bases[s * strip_x + j];
+            if (c < 4) {
+                cpo.one_hot_bwt_str[c] += 1;
+            }
         }
     }
 }
@@ -76,8 +87,8 @@ protected:
     {
         generate_one_hot_mask(bwt_mask);
         size_t array_size = sizeof(bwt_mask);
-        cudaMalloc(&bwt_mask_device, array_size);
-        cudaMemcpy(bwt_mask_device, bwt_mask, array_size, cudaMemcpyHostToDevice);
+        CHECK(cudaMalloc(&bwt_mask_device, array_size));
+        CHECK(cudaMemcpy(bwt_mask_device, bwt_mask, array_size, cudaMemcpyHostToDevice));
     }
     static void TearDownTestSuite()
     {
@@ -228,20 +239,22 @@ TEST_F(BackwardTest, testcase2)
     int N = CP_BLOCK_SIZE * 4;
     generate_occ_cpp(cp[0], arr, count1);
     generate_occ_cpp(cp[1], arr, count1);
-
-    cudaMalloc(&cp_device, 1024 * sizeof(CP_OCC));
-    cudaMemcpy(cp_device, cp, 1024 * sizeof(CP_OCC), cudaMemcpyHostToDevice);
+    // printf("hello\n");
+    CHECK(cudaMalloc(&cp_device, 1024 * sizeof(CP_OCC)));
+    CHECK(cudaMemcpy(cp_device, cp, 1024 * sizeof(CP_OCC), cudaMemcpyHostToDevice));
 
     SMEM_CUDA *smems = (SMEM_CUDA *)malloc(sizeof(SMEM_CUDA) * N);
     SMEM_CUDA *smems_device = NULL;
 
-    for (int i = 0; i < N; i++) {
-        smems[i].k = i;
-        smems[i].l = 0;
-        smems[i].s = 0;
+    for (int i = 0; i < CP_BLOCK_SIZE; i++) {
+        for (int j = 0; j < base_count; j++) {
+            smems[i * base_count + j].k = i;
+            smems[i * base_count + j].l = 0;
+            smems[i * base_count + j].s = 0;
+        }
     }
-    cudaMalloc(&smems_device, N * sizeof(SMEM_CUDA));
-    cudaMemcpy(smems_device, smems, N * sizeof(SMEM_CUDA), cudaMemcpyHostToDevice);
+    CHECK(cudaMalloc(&smems_device, N * sizeof(SMEM_CUDA)));
+    CHECK(cudaMemcpy(smems_device, smems, N * sizeof(SMEM_CUDA), cudaMemcpyHostToDevice));
 
     uint8_t *bases = (uint8_t *)malloc(sizeof(uint8_t) * N);
     uint8_t *bases_deviece = NULL;
@@ -251,19 +264,30 @@ TEST_F(BackwardTest, testcase2)
             bases[i * base_count + j] = j;
         }
     }
-    cudaMalloc(&bases_deviece, N * sizeof(uint8_t));
-    cudaMemcpy(bases_deviece, bases, N * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    CHECK(cudaMalloc(&bases_deviece, N * sizeof(uint8_t)));
+    CHECK(cudaMemcpy(bases_deviece, bases, N * sizeof(uint8_t), cudaMemcpyHostToDevice));
 
     dim3 block(THREADS_PER_BLOCK);
-    dim3 grid(1024 * 1024);
-    getOCC4Back<<<grid, block>>>(cp_device, smems_device, bwt_mask_device, bases_deviece, N, 1);
+    dim3 grid(1024);
+    getOCC4Back<<<grid, block>>>(cp_device, smems_device, bwt_mask_device, bases_deviece, 256, 1);
+    // getOCC4Back<<<grid, block>>>(cp_device, smems_device, bwt_mask_device, bases_deviece, N, 1);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("Kernel launch error: %s\n", cudaGetErrorString(err));
+    }
+    cudaDeviceSynchronize();
+    CHECK(cudaMemcpy(smems, smems_device, N * sizeof(SMEM_CUDA), cudaMemcpyDeviceToHost));
+    {
+        ASSERT_EQ(smems[0].k, 0) << "query k:0  base:0";
+        ASSERT_EQ(smems[1].k, 0) << "query k:0  base:1";
+        ASSERT_EQ(smems[2].k, 0) << "query k:0  base:2";
+        ASSERT_EQ(smems[3].k, 0) << "query k:0  base:3";
 
-    cudaMemcpy(smems, smems_device, N * sizeof(SMEM_CUDA), cudaMemcpyDeviceToHost);
-
-    for (int i = 1; CP_BLOCK_SIZE; i++) {
-        for (int j = 0; j < base_count; j++) {
-            EXPECT_EQ(smems[i * base_count + j].k, result[i][j]);
-            EXPECT_EQ(smems[i * base_count + j].s, 0);
+        for (int i = 1; i < CP_BLOCK_SIZE; i++) {
+            for (int j = 0; j < base_count; j++) {
+                ASSERT_EQ(smems[i * base_count + j].k, result[i - 1][j]) << "query k:" << i << " base:" << j;
+                ASSERT_EQ(smems[i * base_count + j].s, 0) << "query k:" << i << " base:" << j;
+            }
         }
     }
     cudaFree(smems_device);

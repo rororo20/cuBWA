@@ -1263,14 +1263,12 @@ void FMI_search::get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, i
  * @param sentinel_index  sentinel index in suffix array
  * @return void
  */
-
 __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bwt_mask, uint8_t *bases, int size, int64_t sentinel_index)
 {
     int base_idx = blockIdx.x;
     int tid = threadIdx.x;
     unsigned short mask = 0;
     unsigned short onehot = 0;
-    uint8_t bitLast = 0;
     uint8_t count = 0;
     __shared__ int64_t k[4], l[4], s[4];
     if (base_idx >= size) {
@@ -1279,26 +1277,25 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bw
     uint8_t base = bases[base_idx];
     SMEM_CUDA curr = smems[base_idx];
     if (IS_K(tid)) {
-        mask = bwt_mask[(curr.k & CP_MASK) << 2 + GET_GROUP_THREAD_ID(tid)];
-        bitLast = ((curr.k & CP_MASK) + 1) >> 2;
+        mask = bwt_mask[((curr.k & CP_MASK) << 2) + GET_GROUP_THREAD_ID(tid)];
         onehot = cp_occ[curr.k >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid)] >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4);
     }
 
     else {
-        mask = bwt_mask[((curr.k + curr.s) & CP_MASK) << 2 + GET_GROUP_THREAD_ID(tid)];
-        bitLast = (((curr.k + curr.s) & CP_MASK) + 1) >> 2;
-        onehot = cp_occ[(curr.k + curr.s) >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid) >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4)];
+        mask = bwt_mask[(((curr.k + curr.s) & CP_MASK) << 2) + GET_GROUP_THREAD_ID(tid)];
+        onehot = cp_occ[(curr.k + curr.s) >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid)] >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4);
     }
 
-    for (int i = 0; i < bitLast; i++) {
-        count += (onehot & 1);
+    onehot = onehot & mask;
+    /*TODO: bit opt */
+    for (int i = 0; i < 16; i++) {
+        count += (onehot & 0x1);
         onehot = onehot >> 1;
     }
+    unsigned int wrap_mask = (0xFu) << ((tid >> 2) << 2);  //  Generate Wrap Mask for sync add count
 
-    mask = ((1 << 4) - 1) << ((tid >> 2) << 2);  //  Generate Wrap Mask for sync add count
-
-    count += __shfl_xor_sync(mask, count, 1);
-    count += __shfl_xor_sync(mask, count, 2);
+    count += __shfl_xor_sync(wrap_mask, count, 1);
+    count += __shfl_xor_sync(wrap_mask, count, 2);
     if ((GET_GROUP_THREAD_ID(tid)) == 0) {
         if (IS_K(tid)) {  // update k
             k[GET_BASE_PAIR(tid)] = count + cp_occ[curr.k >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
@@ -1309,7 +1306,7 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bw
     }
     __syncthreads();
     if (tid < 4) {
-        s[tid] = l[tid] - s[tid];
+        s[tid] = l[tid] - k[tid];
     }
     __syncthreads();
     if (tid == 0) {
@@ -1317,7 +1314,6 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bw
         l[2] = l[3] + s[3];
         l[1] = l[2] + s[2];
         l[0] = l[1] + s[1];
-
         smems[base_idx].k = k[base];  // Need add COUNT
         smems[base_idx].l = l[base];
         smems[base_idx].s = s[base];
