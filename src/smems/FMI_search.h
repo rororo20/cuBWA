@@ -155,4 +155,9 @@ private:
 
 __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bwt_mask, uint8_t *bases, int size, int64_t sentinel_index);
 
+__device__ __host__ uint8_t countSetBits_loop(unsigned short n);
+
+__device__ __host__ uint8_t countSetBits_v1(unsigned short n);
+
+__device__ __host__ uint8_t countSetBits_v2(unsigned short n);
 #endif

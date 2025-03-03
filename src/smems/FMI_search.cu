@@ -1320,3 +1320,29 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bw
     }
     __syncthreads();
 }
+__device__ __host__ uint8_t countSetBits_loop(unsigned short n)
+{
+    uint8_t count = 0;
+    for (int i = 0; i < 16; i++) {
+        count += (n & 0x1);
+        n = n >> 1;
+    }
+    return count;
+}
+
+__device__ __host__ uint8_t countSetBits_v1(unsigned short n)
+{
+    n = (n & 0x5555) + ((n >> 1) & 0x5555);
+    n = (n & 0x3333) + ((n >> 2) & 0x3333);
+    n = (n & 0x0f0f) + ((n >> 4) & 0x0f0f);
+    n = (n & 0x00ff) + ((n >> 8) & 0x00ff);
+    return n & 0x001f;
+}
+
+__device__ __host__ uint8_t countSetBits_v2(unsigned short n)
+{
+    n = (n & 0x5555) + ((n >> 1) & 0x5555);  // 2bit * 8
+    n = (n & 0x3333) + ((n >> 2) & 0x3333);  // 4bit * 4
+    n = (n & 0x0f0f) + ((n >> 4) & 0x0f0f);  // 8bit * 2
+    return (n * 0x0101) >> 8;
+}

@@ -297,3 +297,19 @@ TEST_F(BackwardTest, testcase2)
     free(cp);
     free(bases);
 }
+
+TEST(countBit, case1)
+{
+    ASSERT_EQ(countSetBits_v1(0xfffe), 15);
+    ASSERT_EQ(countSetBits_v1(0xeffe), 14);
+    ASSERT_EQ(countSetBits_v1(0xffff), 16);
+    ASSERT_EQ(countSetBits_v1(0xaaaa), 8);
+}
+
+TEST(countBit, case2)
+{
+    ASSERT_EQ(countSetBits_v2(0xfffe), 15);
+    ASSERT_EQ(countSetBits_v2(0xeffe), 14);
+    ASSERT_EQ(countSetBits_v2(0xffff), 16);
+    ASSERT_EQ(countSetBits_v2(0xaaaa), 8);
+}
