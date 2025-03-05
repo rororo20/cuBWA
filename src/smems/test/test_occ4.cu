@@ -1,4 +1,5 @@
 #include "FMI_search.h"
+#include "smem.h"
 #include "gtest/gtest.h"
 #include <map>
 #define CHECK(call)                                                     \

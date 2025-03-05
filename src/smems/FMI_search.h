@@ -88,13 +88,6 @@ typedef struct smem_struct
     int64_t k, l, s;
 } SMEM;
 
-typedef struct smem_struct_cuda
-{
-#ifdef DEBUG
-    uint64_t info;  // for debug
-#endif
-    int64_t k, l, s;
-} SMEM_CUDA;
 #define SAL_PFD 16
 
 class FMI_search : public indexEle
@@ -131,6 +124,19 @@ public:
     void get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, int64_t *coordCountArray, int64_t count, const int32_t max_occ,
                                  int tid, int64_t &id_);
 
+    unsigned short *get_bwt_mask()
+    {
+        return bwt_mask;
+    }
+    int get_cp_occ_size() const
+    {
+        return cp_occ_size;
+    }
+
+    CP_OCC *get_cp_occ()
+    {
+        return cp_occ;
+    }
     int64_t reference_seq_len;
     int64_t sentinel_index;
 
@@ -143,7 +149,8 @@ private:
     CP_OCC *cp_occ;
     bool _reorder;
 
-    unsigned short bwt_mask[64][4];
+    unsigned short *bwt_mask;
+    int64_t cp_occ_size = 0;
 
     uint64_t *one_hot_mask_array;
 
@@ -153,11 +160,4 @@ private:
     SMEM backwardExt(SMEM smem, uint8_t a);
 };
 
-__global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bwt_mask, uint8_t *bases, int size, int64_t sentinel_index);
-
-__device__ __host__ uint8_t countSetBits_loop(unsigned short n);
-
-__device__ __host__ uint8_t countSetBits_v1(unsigned short n);
-
-__device__ __host__ uint8_t countSetBits_v2(unsigned short n);
 #endif

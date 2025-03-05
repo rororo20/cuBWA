@@ -55,6 +55,7 @@ FMI_search::FMI_search(const char *fname, bool reorder)
     sa_ms_byte = NULL;
     cp_occ = NULL;
     one_hot_mask_array = NULL;
+    bwt_mask = NULL;
     _reorder = reorder;
 }
 
@@ -64,6 +65,7 @@ FMI_search::~FMI_search()
     if (sa_ls_word) _mm_free(sa_ls_word);
     if (cp_occ) _mm_free(cp_occ);
     if (one_hot_mask_array) _mm_free(one_hot_mask_array);
+    if (bwt_mask) free(bwt_mask);
 }
 
 int64_t FMI_search::pac_seq_len(const char *fn_pac)
@@ -394,14 +396,14 @@ void FMI_search::load_index()
     for (i = 2; i < 64; i++) {
         one_hot_mask_array[i] = (one_hot_mask_array[i - 1] >> 1) | base;
     }
-    memset(bwt_mask, 0, sizeof(bwt_mask));
+    bwt_mask = (unsigned short *)calloc(sizeof(unsigned short), 64 * 4);
     for (i = 0; i < 64; i++) {
         uint64_t offset = one_hot_mask_array[i];
         for (int j = 0; j < 16; j++) {
-            bwt_mask[i][0] = (bwt_mask[i][0] << 1) | (offset >> 63 & 0X1L);
-            bwt_mask[i][1] = (bwt_mask[i][1] << 1) | (offset >> 62 & 0x1L);
-            bwt_mask[i][2] = (bwt_mask[i][2] << 1) | (offset >> 61 & 0x1L);
-            bwt_mask[i][3] = (bwt_mask[i][3] << 1) | (offset >> 60 & 0x1L);
+            bwt_mask[i * 4] = (bwt_mask[i * 4] << 1) | (offset >> 63 & 0X1L);
+            bwt_mask[i * 4 + 1] = (bwt_mask[i * 4 + 1] << 1) | (offset >> 62 & 0x1L);
+            bwt_mask[i * 4 + 2] = (bwt_mask[i * 4 + 2] << 1) | (offset >> 61 & 0x1L);
+            bwt_mask[i * 4 + 3] = (bwt_mask[i * 4 + 3] << 1) | (offset >> 60 & 0x1L);
             offset = offset << 4;
         }
     }
@@ -429,7 +431,7 @@ void FMI_search::load_index()
     fprintf(stderr, "* Reference seq len for bi-index = %ld\n", reference_seq_len);
 
     // create checkpointed occ
-    int64_t cp_occ_size = (reference_seq_len >> CP_SHIFT) + 1;
+    cp_occ_size = (reference_seq_len >> CP_SHIFT) + 1;
     cp_occ = NULL;
 
     err_fread_noeof(&count[0], sizeof(int64_t), 5, cpstream);
@@ -997,7 +999,7 @@ int64_t FMI_search::get_sa_entry_compressed(int64_t pos, int tid)
 #if SA_COMPRESSION
         int64_t sa_entry = sa_ms_byte[pos >> SA_COMPX];
 #else
-        int64_t sa_entry = sa_ms_byte[pos];  // simulation
+        int64_t sa_entry = sa_ms_byte[pos];     // simulation
 #endif
 
         sa_entry = sa_entry << 32;
@@ -1047,7 +1049,7 @@ int64_t FMI_search::get_sa_entry_compressed(int64_t pos, int tid)
 #if SA_COMPRESSION
         int64_t sa_entry = sa_ms_byte[sp >> SA_COMPX];
 #else
-        int64_t sa_entry = sa_ms_byte[sp];  // simultion
+        int64_t sa_entry = sa_ms_byte[sp];      // simultion
 #endif
 
         sa_entry = sa_entry << 32;
@@ -1055,7 +1057,7 @@ int64_t FMI_search::get_sa_entry_compressed(int64_t pos, int tid)
 #if SA_COMPRESSION
         sa_entry = sa_entry + sa_ls_word[sp >> SA_COMPX];
 #else
-        sa_entry = sa_entry + sa_ls_word[sp];  // simulation
+        sa_entry = sa_entry + sa_ls_word[sp];   // simulation
 #endif
 
         sa_entry += offset;
@@ -1248,101 +1250,4 @@ void FMI_search::get_sa_entries_prefetch(SMEM *smemArray, int64_t *coordArray, i
 
     _mm_free(pos_ar);
     _mm_free(map_ar);
-}
-
-#define IS_K(tid)                (tid < 15)
-#define GET_GROUP_THREAD_ID(tid) (tid & 0x3)
-#define GET_BASE_PAIR(tid)       ((tid >> 2) & 0x3)
-
-/**
- * @brief backwardExt GPU implement
- * @param cp_occ  checkpoint occ scalar
- * @param bwt_mask  bwt mask array
- * @param bases  multipy base pairs 2bit encode
- * @param size  number of base pairs
- * @param sentinel_index  sentinel index in suffix array
- * @return void
- */
-__global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bwt_mask, uint8_t *bases, int size, int64_t sentinel_index)
-{
-    int base_idx = blockIdx.x;
-    int tid = threadIdx.x;
-    unsigned short mask = 0;
-    unsigned short onehot = 0;
-    uint8_t count = 0;
-    __shared__ int64_t k[4], l[4], s[4];
-    if (base_idx >= size) {
-        return;
-    }
-    uint8_t base = bases[base_idx];
-    SMEM_CUDA curr = smems[base_idx];
-    if (IS_K(tid)) {
-        mask = bwt_mask[((curr.k & CP_MASK) << 2) + GET_GROUP_THREAD_ID(tid)];
-        onehot = cp_occ[curr.k >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid)] >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4);
-    }
-
-    else {
-        mask = bwt_mask[(((curr.k + curr.s) & CP_MASK) << 2) + GET_GROUP_THREAD_ID(tid)];
-        onehot = cp_occ[(curr.k + curr.s) >> CP_SHIFT].one_hot_bwt_str[GET_BASE_PAIR(tid)] >> ((3 - GET_GROUP_THREAD_ID(tid)) << 4);
-    }
-
-    onehot = onehot & mask;
-    /*TODO: bit opt */
-    for (int i = 0; i < 16; i++) {
-        count += (onehot & 0x1);
-        onehot = onehot >> 1;
-    }
-    unsigned int wrap_mask = (0xFu) << ((tid >> 2) << 2);  //  Generate Wrap Mask for sync add count
-
-    count += __shfl_xor_sync(wrap_mask, count, 1);
-    count += __shfl_xor_sync(wrap_mask, count, 2);
-    if ((GET_GROUP_THREAD_ID(tid)) == 0) {
-        if (IS_K(tid)) {  // update k
-            k[GET_BASE_PAIR(tid)] = count + cp_occ[curr.k >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
-        }
-        else {  // update L
-            l[GET_BASE_PAIR(tid)] = count + cp_occ[(curr.k + curr.s) >> CP_SHIFT].cp_count[GET_BASE_PAIR(tid)];
-        }
-    }
-    __syncthreads();
-    if (tid < 4) {
-        s[tid] = l[tid] - k[tid];
-    }
-    __syncthreads();
-    if (tid == 0) {
-        l[3] = curr.l + ((curr.k <= sentinel_index) && ((curr.k + curr.s) > sentinel_index));
-        l[2] = l[3] + s[3];
-        l[1] = l[2] + s[2];
-        l[0] = l[1] + s[1];
-        smems[base_idx].k = k[base];  // Need add COUNT
-        smems[base_idx].l = l[base];
-        smems[base_idx].s = s[base];
-    }
-    __syncthreads();
-}
-__device__ __host__ uint8_t countSetBits_loop(unsigned short n)
-{
-    uint8_t count = 0;
-    for (int i = 0; i < 16; i++) {
-        count += (n & 0x1);
-        n = n >> 1;
-    }
-    return count;
-}
-
-__device__ __host__ uint8_t countSetBits_v1(unsigned short n)
-{
-    n = (n & 0x5555) + ((n >> 1) & 0x5555);
-    n = (n & 0x3333) + ((n >> 2) & 0x3333);
-    n = (n & 0x0f0f) + ((n >> 4) & 0x0f0f);
-    n = (n & 0x00ff) + ((n >> 8) & 0x00ff);
-    return n & 0x001f;
-}
-
-__device__ __host__ uint8_t countSetBits_v2(unsigned short n)
-{
-    n = (n & 0x5555) + ((n >> 1) & 0x5555);  // 2bit * 8
-    n = (n & 0x3333) + ((n >> 2) & 0x3333);  // 4bit * 4
-    n = (n & 0x0f0f) + ((n >> 4) & 0x0f0f);  // 8bit * 2
-    return (n * 0x0101) >> 8;
 }
