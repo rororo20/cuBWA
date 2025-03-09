@@ -1,6 +1,157 @@
 #include "smem.h"
 #include "FMI_search.h"
 
+SMEM *SMEM_SEARCH::collect_smem(const bseq1_t *seq, int nseq, int32_t min_interval)
+{
+    /* init  SMEMS status*/
+    int current_seq_id = 0;
+    int min_seq_id = std::min(batch_smems_size, nseq);
+    int running_reads = 0;
+    int max_length = -1;
+
+    for (int i = 0; i < nseq; i++) {
+        if (seq[i].l_seq > max_length) {
+            max_length = seq[i].l_seq;
+        }
+    }
+    if (max_length * nseq > max_pre_num) {
+        prev = (SMEM *)realloc(prev, max_length * sizeof(SMEM));
+    }
+    // TODO: resource reside in object
+    int *running_idx = (int *)malloc(sizeof(int) * batch_smems_size);
+    int *idle_idx = (int *)malloc(sizeof(int) * batch_smems_size);
+    int *start = (int *)malloc(sizeof(int) * batch_smems_size);
+    int *end = (int *)malloc(sizeof(int) * batch_smems_size);
+    int *s = (int *)malloc(sizeof(int) * batch_smems_size);
+    int *prev_num_ = (int *)malloc(sizeof(int) * batch_smems_size);
+
+    while (current_seq_id < min_seq_id) {
+        status[current_seq_id].rid = current_seq_id;
+        status[current_seq_id].step_status = StepStatus::first_pass;
+        status[current_seq_id].direct_status = SearchDirectionStatus::foward;
+        status[current_seq_id].seq_offset = 1;
+        current_seq_id++;
+        running_reads++;
+    }
+    /* prepare smems array */
+    for (int i = 0; i < running_reads; i++) {
+        host_bases[i] = 3 - seq[i].seq[1];
+        start[i] = 0;
+        end[i] = 0;
+        host_smems[i].k = count[3 - seq[i].seq[0]];
+        host_smems[i].l = count[seq[i].seq[0]];
+        host_smems[i].s = count[seq[i].seq[0] + 1] - count[seq[i].seq[0]];
+        s[i] = host_smems[i].l - host_smems[i].k;
+        running_idx[i] = i;
+        SMEM *tmp = prev + i * max_length;
+        tmp->m = tmp->n = 0;
+        tmp->rid = i;
+        tmp->s = s[i];
+        prev_num_[i] = 0;
+    }
+    int new_idle_idx = 0;
+    do {
+        // TODO: less  use cpu method
+        backward(running_reads);
+        // update status
+        int new_running_idx = 0;
+        for (int i = 0; i < running_reads; i++) {
+            SMEMS_STATUS *curr = status + running_idx[i];
+            // update host MEMS  and Modify idle_idx
+            if (curr->step_status != StepStatus::bwt_seed_strategy) {
+                if (curr->direct_status == SearchDirectionStatus::foward) {
+                    end[running_idx[i]] = curr->seq_offset;
+                    //  before backward may save
+                    prev_num_[i] += host_smems[i].s != prev[i * max_length + prev_num_[i]].s;
+
+                    prev[i * max_length + prev_num_[i]].s = host_smems[i].s;
+                    // SWAP
+                    prev[i * max_length + prev_num_[i]].k = host_smems[i].l;
+                    prev[i * max_length + prev_num_[i]].l = host_smems[i].k;
+
+                    if (host_smems[i].s < min_interval) {  // switch to BackWard
+                        // Last interval
+                        prev_num_[i] += (prev[i * max_length + prev_num_[i]].s >= min_interval);
+                        // SORT ...
+                        for (int p = 0; p < (prev_num_[i] / 2); p++) {
+                            SMEM temp = prev[p];
+                            prev[p] = prev[prev_num_[i] - p - 1];
+                            prev[prev_num_[i] - p - 1] = temp;
+                        }
+                        // curr->direct_status = SearchDirectionStatus::backward;
+                        curr->seq_offset = curr->anchor - 1;
+                        if (curr->anchor == 0) {  // can't extend
+                            idle_idx[new_idle_idx] = running_idx[i];
+                            new_idle_idx++;
+                        }
+                        else {
+                            running_idx[new_running_idx] = running_idx[i];
+                            new_running_idx++;
+                            // get base  and
+                        }
+                        curr->currr_offset = 0;
+                    }
+                    else {
+                        //  continue Foward.
+                        curr->seq_offset++;
+                        running_idx[new_running_idx] = running_idx[i];
+                        new_running_idx++;
+                    }
+                }
+                else {
+                    // TODO: dispatch prev number to
+                    if (curr->prev_offset == prev_num_[i]) {
+                        if (0) {      // backward can't extend , switch new step
+                            if (0) {  // swtich
+                                idle_idx[new_idle_idx] = running_idx[i];
+                                new_idle_idx++;
+                            }
+                        }
+                        else {  // continue backward
+                        }
+                    }
+                    else {
+                        running_idx[new_running_idx] = running_idx[i];
+                        new_running_idx++;
+                        if (0) {  // TODO: can't extend
+                        }
+                        {
+                            curr->currr_offset++;
+                        }
+                        // prepare next
+                    }
+                }
+            }
+            else {}
+        }
+        //  prepare new reads's array
+        while (running_reads < batch_smems_size && current_seq_id < nseq) {
+            if (0) {
+                // Todo : Dispath two pass
+            }
+            else {
+                status[running_reads].rid = current_seq_id;
+                status[running_reads].step_status = StepStatus::first_pass;
+                status[running_reads].direct_status = SearchDirectionStatus::foward;
+                status[running_reads].seq_offset = 1;
+                host_bases[running_reads] = 3 - seq[current_seq_id].seq[1];
+                // how record m n ?
+                host_smems[running_reads].k = count[seq[current_seq_id].seq[0]];
+                host_smems[running_reads].l = count[3 - seq[current_seq_id].seq[0]];
+                host_smems[running_reads].s = count[seq[current_seq_id].seq[0] + 1] - count[seq[current_seq_id].seq[0]];
+                running_idx[running_reads] = running_reads;
+                running_reads++;
+                current_seq_id++;
+            }
+        }
+    } while (running_reads > 0);
+    free(running_idx);
+    free(start);
+    free(end);
+    free(s);
+    return NULL;
+}
+/* TODO: Stream*/
 void SMEM_SEARCH::backward(int process_number)
 {
     if (process_number == 0) return;
