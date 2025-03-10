@@ -26,9 +26,11 @@ struct SMEMS_STATUS
     int rid;
     int anchor;
     int seq_offset;
+    int rightmost;
     // for
     int prev_offset;
     int currr_offset;
+    bool has_optimal_smems_occurred;
 };
 
 class SMEM_SEARCH

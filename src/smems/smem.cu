@@ -60,64 +60,116 @@ SMEM *SMEM_SEARCH::collect_smem(const bseq1_t *seq, int nseq, int32_t min_interv
             // update host MEMS  and Modify idle_idx
             if (curr->step_status != StepStatus::bwt_seed_strategy) {
                 if (curr->direct_status == SearchDirectionStatus::foward) {
+                    // todo: l_seq
+                    int mapping_prev_offset = i * max_length;
                     end[running_idx[i]] = curr->seq_offset;
                     //  before backward may save
-                    prev_num_[i] += host_smems[i].s != prev[i * max_length + prev_num_[i]].s;
+                    prev_num_[i] += host_smems[i].s != prev[mapping_prev_offset + prev_num_[i]].s;
 
-                    prev[i * max_length + prev_num_[i]].s = host_smems[i].s;
+                    prev[mapping_prev_offset + prev_num_[i]].s = host_smems[i].s;
                     // SWAP
-                    prev[i * max_length + prev_num_[i]].k = host_smems[i].l;
-                    prev[i * max_length + prev_num_[i]].l = host_smems[i].k;
-
-                    if (host_smems[i].s < min_interval) {  // switch to BackWard
+                    prev[mapping_prev_offset + prev_num_[i]].k = host_smems[i].l;
+                    prev[mapping_prev_offset + prev_num_[i]].l = host_smems[i].k;
+                    if (host_smems[i].s < min_interval || curr->seq_offset == seq[curr->rid].l_seq - 1) {  // switch to BackWard
                         // Last interval
-                        prev_num_[i] += (prev[i * max_length + prev_num_[i]].s >= min_interval);
+                        if (curr->seq_offset != seq[curr->rid].l_seq - 1)
+                            prev_num_[i] += (prev[mapping_prev_offset + prev_num_[i]].s >= min_interval);
                         // SORT ...
                         for (int p = 0; p < (prev_num_[i] / 2); p++) {
-                            SMEM temp = prev[p];
-                            prev[p] = prev[prev_num_[i] - p - 1];
-                            prev[prev_num_[i] - p - 1] = temp;
+                            SMEM temp = prev[mapping_prev_offset + p];
+                            prev[mapping_prev_offset + p] = prev[mapping_prev_offset + prev_num_[i] - p - 1];
+                            prev[mapping_prev_offset + prev_num_[i] - p - 1] = temp;
                         }
                         // curr->direct_status = SearchDirectionStatus::backward;
                         curr->seq_offset = curr->anchor - 1;
-                        if (curr->anchor == 0) {  // can't extend
-                            idle_idx[new_idle_idx] = running_idx[i];
-                            new_idle_idx++;
-                        }
-                        else {
+                        if (curr->anchor == 0 || prev_num_[i] == 0) {  // continue  foward search from next anchor's
+
+                            curr->anchor = curr->seq_offset + 1;
+                            host_bases[new_running_idx] = 3 - seq[curr->rid].seq[curr->anchor + 1];
+                            host_smems[new_running_idx].k = count[3 - seq[curr->rid].seq[curr->anchor]];
+                            host_smems[new_running_idx].l = count[seq[curr->rid].seq[curr->anchor]];
+                            host_smems[new_running_idx].s =
+                                count[seq[curr->rid].seq[curr->anchor] + 1] - count[seq[curr->rid].seq[curr->anchor]];
+                            curr->seq_offset = curr->anchor + 2;
                             running_idx[new_running_idx] = running_idx[i];
                             new_running_idx++;
-                            // get base  and
                         }
-                        curr->currr_offset = 0;
+                        else {
+                            // get base  and
+                            curr->seq_offset = curr->anchor - 1;
+                            host_bases[new_running_idx] = seq[curr->rid].seq[curr->seq_offset];
+                            running_idx[new_running_idx] = running_idx[i];
+                            host_smems[new_running_idx].k = prev[mapping_prev_offset].k;
+                            host_smems[new_running_idx].l = prev[mapping_prev_offset].l;
+                            host_smems[new_running_idx].s = prev[mapping_prev_offset].s;
+                            new_running_idx++;
+                            curr->currr_offset = 0;
+                            curr->prev_offset = 0;
+                        }
                     }
                     else {
                         //  continue Foward.
                         curr->seq_offset++;
+                        host_bases[new_running_idx] = 3 - seq[curr->rid].seq[curr->seq_offset];
+                        host_smems[new_running_idx].k = host_smems[mapping_prev_offset].l;
+                        host_smems[new_running_idx].l = host_smems[mapping_prev_offset].k;
+                        host_smems[new_running_idx].s = host_smems[mapping_prev_offset].s;
                         running_idx[new_running_idx] = running_idx[i];
                         new_running_idx++;
                     }
                 }
                 else {
-                    // TODO: dispatch prev number to
-                    if (curr->prev_offset == prev_num_[i]) {
-                        if (0) {      // backward can't extend , switch new step
-                            if (0) {  // swtich
-                                idle_idx[new_idle_idx] = running_idx[i];
-                                new_idle_idx++;
+                    if (curr->prev_offset == prev_num_[i] - 1) {
+                        if (curr->currr_offset == 0) {  // backward can't extend , switch new step
+                            if (curr->rightmost == seq[curr->rid].l_seq - 1) {
+                                if (curr->step_status == StepStatus::first_pass) {
+                                    idle_idx[new_idle_idx] = running_idx[i];
+                                    new_idle_idx++;
+                                }
+                                else {
+                                    // swith bwt seeds
+                                    curr->step_status = StepStatus::bwt_seed_strategy;
+                                }
+                            }
+                            else {  // Switch forward
+                                curr->anchor = curr->rightmost;
+                                host_bases[new_running_idx] = 3 - seq[curr->rid].seq[curr->anchor + 1];
+                                host_smems[new_running_idx].k = count[3 - seq[curr->rid].seq[curr->anchor]];
+                                host_smems[new_running_idx].l = count[seq[curr->rid].seq[curr->anchor]];
+                                host_smems[new_running_idx].s =
+                                    count[seq[curr->rid].seq[curr->anchor] + 1] - count[seq[curr->rid].seq[curr->anchor]];
+                                curr->seq_offset = curr->rightmost + 1;
+                                running_idx[new_running_idx] = running_idx[i];
+                                new_running_idx++;
+                                ;
                             }
                         }
                         else {  // continue backward
+                            curr->seq_offset--;
+                            host_bases[new_running_idx] = seq[curr->rid].seq[curr->seq_offset];
+                            host_smems[new_running_idx].k = prev[i * max_length].k;
+                            host_smems[new_running_idx].l = prev[i * max_length].l;
+                            host_smems[new_running_idx].s = prev[i * max_length].s;
+                            prev_num_[i] = curr->currr_offset;
+                            curr->currr_offset = 0;
+                            curr->prev_offset = 0;
+                            running_idx[new_running_idx] = running_idx[i];
+                            new_running_idx++;
                         }
                     }
                     else {
-                        running_idx[new_running_idx] = running_idx[i];
-                        new_running_idx++;
-                        if (0) {  // TODO: can't extend
-                        }
-                        {
+                        if (s[i] != host_smems[i].s && host_smems[i].s > min_interval) {
+                            if (!curr->has_optimal_smems_occurred) {
+                                // push to results
+                                curr->has_optimal_smems_occurred = true;
+                                ;
+                            }
                             curr->currr_offset++;
                         }
+
+                        if () curr->prev_offset++;
+                        running_idx[new_running_idx] = running_idx[i];
+                        new_running_idx++;
                         // prepare next
                     }
                 }
