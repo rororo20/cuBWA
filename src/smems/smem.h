@@ -33,10 +33,15 @@ struct SMEMS_STATUS
     bool has_optimal_smems_occurred;
 };
 
-class SMEM_SEARCH
+struct FirstPassSmems
+{
+    int rid;
+    int rightmost;
+};
+class SMEMSerach
 {
 public:
-    SMEM_SEARCH(FMI_search *fm, int smems_size, int reads_size)
+    SMEMSerach(FMI_search *fm, int smems_size, int reads_size)
         : fmi(fm)
         , batch_reads_size(reads_size)
         , batch_smems_size(smems_size)
@@ -68,7 +73,7 @@ public:
 
     SMEM *collect_smem(const bseq1_t *seq, int nseq, int32_t min_interval);
 
-    ~SMEM_SEARCH()
+    ~SMEMSerach()
     {
         cudaFree(cp_occ);
         cudaFree(bwt_mask_device);
@@ -104,7 +109,8 @@ private:
     uint8_t *device_bases;
     int batch_smems_size;
     int batch_reads_size;
-    SMEM *first_pass_result;
+    FirstPassSmems *first_result;
+    int first_result_num;
     SMEM *result;
     int result_num;
     int max_result_num;
