@@ -69,6 +69,10 @@ public:
         result = (SMEM *)malloc(sizeof(SMEM) * max_result_num);
         prev = (SMEM *)malloc(sizeof(SMEM) * max_pre_num);
         status = (SMEMS_STATUS *)malloc(sizeof(SMEMS_STATUS) * batch_smems_size);
+
+        int *running_idx = (int *)malloc(sizeof(int) * batch_smems_size);
+        int *idle_idx = (int *)malloc(sizeof(int) * batch_smems_size);
+        int *prev_num_ = (int *)malloc(sizeof(int) * batch_smems_size);
     }
 
     SMEM *collect_smem(const bseq1_t *seq, int nseq, int32_t min_interval);
@@ -84,6 +88,10 @@ public:
         free(result);
         free(prev);
         free(status);
+
+        free(running_idx);
+        free(idle_idx);
+        free(prev_num_);
     }
 
 private:
@@ -93,6 +101,22 @@ private:
     static constexpr int coefficient_prev = 150;
 
     void backward(int process_number);
+
+    int get_maxlength(const bseq1_t *seq, int nseq);
+
+    void initialze_batch_smems_stauts(int &current_seq_id, int &running_reads, const bseq1_t *seq, const int n_seq, const int max_length);
+
+    void non_bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, SMEMS_STATUS *curr, const int smems_idx, const int max_length,
+                             const int min_interval);
+
+    void non_bwt_seed_backward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
+                               const int max_length, const int min_interval);
+
+    void bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
+                         const int max_length, const int min_interval);
+
+    void prepre_batch_status(const bseq1_t *seq, int &current_seq_id, int &running_reads, int &new_running_idx, int &new_idle_idx,
+                             int nseq);
 
     FMI_search *fmi;
     //  Device Index
@@ -118,6 +142,9 @@ private:
     int prev_num;
     int max_pre_num;
     SMEMS_STATUS *status;
+    int *running_idx;
+    int *idle_idx;
+    int *prev_num_;
 };
 
 __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bwt_mask, uint8_t *bases, int size, int64_t sentinel_index);
