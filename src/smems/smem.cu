@@ -1,7 +1,17 @@
 #include "smem.h"
 #include "FMI_search.h"
 
-int SMEMSerach::get_maxlength(const bseq1_t *seq, int nseq)
+#define CUDA_CHECK(call)                                                                                 \
+    do {                                                                                                 \
+        cudaError_t error = call;                                                                        \
+        if (error != cudaSuccess) {                                                                      \
+            fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(error)); \
+            exit(EXIT_FAILURE);                                                                          \
+        }                                                                                                \
+    } while (0)
+
+// Get the maximum length among all sequences
+int SMEMSearch::get_maxlength(const bseq1_t *seq, int nseq)
 {
     int max_length = -1;
 
@@ -13,8 +23,14 @@ int SMEMSerach::get_maxlength(const bseq1_t *seq, int nseq)
     return max_length;
 }
 
-void SMEMSerach::initialze_batch_smems_stauts(int &current_seq_id, int &running_reads, const bseq1_t *seq, const int n_seq,
-                                              const int max_length)
+// Initialize the first batch of reads status
+// Key steps:
+// 1. Set initial search direction as forward
+// 2. Initialize the first SMEM interval information
+// 3. Set initial anchor position
+// 4. Handle N bases in sequence
+void SMEMSearch::initialize_batch_smems_status(int &current_seq_id, int &running_reads, const bseq1_t *seq, const int n_seq,
+                                               const int max_length)
 {
     int batch_max_number = std::min(batch_smems_size, n_seq);
     while (current_seq_id < batch_max_number) {
@@ -24,7 +40,7 @@ void SMEMSerach::initialze_batch_smems_stauts(int &current_seq_id, int &running_
         SMEM *tmp = prev + (current_seq_id * max_length);
         status[current_seq_id].rid = current_seq_id;
         status[current_seq_id].step_status = StepStatus::first_pass;
-        status[current_seq_id].direct_status = SearchDirectionStatus::foward;
+        status[current_seq_id].direct_status = SearchDirectionStatus::forward;
         status[current_seq_id].seq_offset = 1;
         host_bases[current_seq_id] = 3 - seq[current_seq_id].seq[1];
         host_smems[current_seq_id].k = count[3 - c];
@@ -40,8 +56,14 @@ void SMEMSerach::initialze_batch_smems_stauts(int &current_seq_id, int &running_
     }
 }
 
-void SMEMSerach::non_bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, SMEMS_STATUS *curr, const int smems_idx,
-                                     const int max_length, const int min_interval)
+// Forward search without BWT seed strategy
+// Main logic:
+// 1. Extend current SMEM
+// 2. Switch to backward search if interval is too small or reach sequence end
+// 3. Find new anchor if current anchor is 0 or no valid interval
+// 4. Handle N bases and special cases
+void SMEMSearch::non_bwt_seed_forward(const bseq1_t *seq, int &new_running_idx, SMEMS_STATUS *curr, const int smems_idx,
+                                      const int max_length, const int min_interval)
 {
     int mapping_prev_offset = smems_idx * max_length;
     prev_num_[smems_idx] += host_smems[smems_idx].s != prev[mapping_prev_offset + prev_num_[smems_idx]].s;
@@ -75,7 +97,7 @@ void SMEMSerach::non_bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, S
             curr->seq_offset = curr->anchor + 1;
             running_idx[new_running_idx] = running_idx[smems_idx];
             new_running_idx++;
-            curr->direct_status = SearchDirectionStatus::foward;
+            curr->direct_status = SearchDirectionStatus::forward;
         }
         else {
             // starting backward search
@@ -87,7 +109,7 @@ void SMEMSerach::non_bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, S
             host_smems[new_running_idx].l = prev[mapping_prev_offset].l;
             host_smems[new_running_idx].s = prev[mapping_prev_offset].s;
             new_running_idx++;
-            curr->currr_offset = 0;
+            curr->curr_offset = 0;
             curr->prev_offset = 0;
             curr->direct_status = SearchDirectionStatus::backward;
         }
@@ -104,11 +126,17 @@ void SMEMSerach::non_bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, S
     }
 }
 
-void SMEMSerach::non_bwt_seed_backward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
+// Backward search without BWT seed strategy
+// Key points:
+// 1. Check if need to switch search phase
+// 2. Switch to new phase if backward extension fails
+// 3. Save optimal SMEMs when found
+// 4. Handle boundary conditions
+void SMEMSearch::non_bwt_seed_backward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
                                        const int max_length, const int min_interval)
 {
     if (curr->prev_offset == prev_num_[smems_idx] - 1) {
-        if (curr->currr_offset == 0) {  // backward can't extend , switch new step
+        if (curr->curr_offset == 0) {  // backward can't extend , switch new step
             if (curr->rightmost == seq[curr->rid].l_seq - 1) {
                 if (curr->step_status == StepStatus::first_pass) {
                     idle_idx[new_idle_idx] = running_idx[smems_idx];
@@ -145,8 +173,8 @@ void SMEMSerach::non_bwt_seed_backward(const bseq1_t *seq, int &new_running_idx,
             host_smems[new_running_idx].k = prev[smems_idx * max_length].k;
             host_smems[new_running_idx].l = prev[smems_idx * max_length].l;
             host_smems[new_running_idx].s = prev[smems_idx * max_length].s;
-            prev_num_[smems_idx] = curr->currr_offset;
-            curr->currr_offset = 0;
+            prev_num_[smems_idx] = curr->curr_offset;
+            curr->curr_offset = 0;
             curr->prev_offset = 0;
             running_idx[new_running_idx] = running_idx[smems_idx];
             new_running_idx++;
@@ -171,10 +199,10 @@ void SMEMSerach::non_bwt_seed_backward(const bseq1_t *seq, int &new_running_idx,
             }
 
             if (host_smems[smems_idx].s >= min_interval) {
-                prev[smems_idx * max_length + curr->currr_offset].k = host_smems[smems_idx].k;
-                prev[smems_idx * max_length + curr->currr_offset].l = host_smems[smems_idx].l;
-                prev[smems_idx * max_length + curr->currr_offset].s = host_smems[smems_idx].s;
-                curr->currr_offset++;
+                prev[smems_idx * max_length + curr->curr_offset].k = host_smems[smems_idx].k;
+                prev[smems_idx * max_length + curr->curr_offset].l = host_smems[smems_idx].l;
+                prev[smems_idx * max_length + curr->curr_offset].s = host_smems[smems_idx].s;
+                curr->curr_offset++;
             }
         }
         curr->prev_offset++;
@@ -187,8 +215,14 @@ void SMEMSerach::non_bwt_seed_backward(const bseq1_t *seq, int &new_running_idx,
     }
 }
 
-void SMEMSerach::bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
-                                 const int max_length, const int min_interval)
+// Forward search with BWT seed strategy
+// Process:
+// 1. Extend current SMEM
+// 2. Save results and find new anchor if interval is too small
+// 3. Continue forward extension otherwise
+// 4. Handle special cases and N bases
+void SMEMSearch::bwt_seed_forward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
+                                  const int max_length, const int min_interval)
 {
     curr->seq_offset++;
     if (host_smems[new_running_idx].s < min_interval) {
@@ -223,8 +257,14 @@ void SMEMSerach::bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, int &
     new_running_idx++;
 }
 
-void SMEMSerach::prepre_batch_status(const bseq1_t *seq, int &current_seq_id, int &running_reads, int &new_running_idx, int &new_idle_idx,
-                                     int nseq)
+// Prepare status for next batch of reads
+// Steps:
+// 1. Process first pass results
+// 2. Initialize new reads
+// 3. Update running reads list
+// 4. Handle idle indices
+void SMEMSearch::prepare_batch_status(const bseq1_t *seq, int &current_seq_id, int &running_reads, int &new_running_idx, int &new_idle_idx,
+                                      int nseq)
 {
     while (new_running_idx < batch_smems_size && (current_seq_id < nseq || first_result_num > 0)) {
         int new_idx = idle_idx[new_idle_idx];
@@ -233,7 +273,7 @@ void SMEMSerach::prepre_batch_status(const bseq1_t *seq, int &current_seq_id, in
             int anchor = first_result[first_result_num].rightmost;
             status[new_idx].rid = rid;
             status[new_idx].step_status = StepStatus::second_pass;
-            status[new_idx].direct_status = SearchDirectionStatus::foward;
+            status[new_idx].direct_status = SearchDirectionStatus::forward;
             status[new_idx].seq_offset = anchor + 1;
             host_bases[new_idx] = 3 - seq[rid].seq[anchor + 1];
             host_smems[new_idx].k = count[seq[rid].seq[anchor]];
@@ -244,7 +284,7 @@ void SMEMSerach::prepre_batch_status(const bseq1_t *seq, int &current_seq_id, in
         else {
             status[new_idx].rid = current_seq_id;
             status[new_idx].step_status = StepStatus::first_pass;
-            status[new_idx].direct_status = SearchDirectionStatus::foward;
+            status[new_idx].direct_status = SearchDirectionStatus::forward;
             status[new_idx].seq_offset = 1;
             host_bases[new_idx] = 3 - seq[current_seq_id].seq[1];
             host_smems[new_idx].k = count[seq[current_seq_id].seq[0]];
@@ -258,7 +298,14 @@ void SMEMSerach::prepre_batch_status(const bseq1_t *seq, int &current_seq_id, in
     }
     running_reads = new_running_idx;
 }
-SMEM *SMEMSerach::collect_smem(const bseq1_t *seq, int nseq, int32_t min_interval)
+
+// Main SMEM collection function
+// Workflow:
+// 1. Initialize status and memory
+// 2. Process all reads until completion
+// 3. Choose search strategy based on read status
+// 4. Handle results and memory management
+SMEM *SMEMSearch::collect_smem(const bseq1_t *seq, int nseq, int32_t min_interval)
 {
     /* init  SMEMS status*/
     int current_seq_id = 0;
@@ -267,8 +314,13 @@ SMEM *SMEMSerach::collect_smem(const bseq1_t *seq, int nseq, int32_t min_interva
 
     if (max_length * nseq > max_pre_num) {
         prev = (SMEM *)realloc(prev, max_length * sizeof(SMEM));
+        if (prev == nullptr) {
+            printf("Error: Failed to reallocate prev array\n");
+            exit(1);
+        }
+        max_pre_num = max_length * nseq;
     }
-    initialze_batch_smems_stauts(current_seq_id, running_reads, seq, nseq, max_length);
+    initialize_batch_smems_status(current_seq_id, running_reads, seq, nseq, max_length);
     /* prepare smems array */
     int new_idle_idx = 0;
     do {
@@ -279,32 +331,40 @@ SMEM *SMEMSerach::collect_smem(const bseq1_t *seq, int nseq, int32_t min_interva
             SMEMS_STATUS *curr = status + running_idx[i];
             // update host MEMS  and Modify idle_idx
             if (curr->step_status != StepStatus::bwt_seed_strategy) {
-                if (curr->direct_status == SearchDirectionStatus::foward) {
-                    non_bwt_seed_foward(seq, new_running_idx, curr, i, max_length, min_interval);
+                if (curr->direct_status == SearchDirectionStatus::forward) {
+                    non_bwt_seed_forward(seq, new_running_idx, curr, i, max_length, min_interval);
                 }
                 else {
                     non_bwt_seed_backward(seq, new_running_idx, new_idle_idx, curr, i, max_length, min_interval);
                 }
             }
             else {
-                bwt_seed_foward(seq, new_running_idx, new_idle_idx, curr, i, max_length, min_interval);
+                bwt_seed_forward(seq, new_running_idx, new_idle_idx, curr, i, max_length, min_interval);
             }
         }
         //  prepare new reads's array
-        prepre_batch_status(seq, current_seq_id, running_reads, new_running_idx, new_idle_idx, nseq);
+        prepare_batch_status(seq, current_seq_id, running_reads, new_running_idx, new_idle_idx, nseq);
     } while (running_reads > 0);
     return NULL;
 }
-/* TODO: Stream*/
-void SMEMSerach::backward(int process_number)
+
+// GPU implementation of backward search
+// Process:
+// 1. Copy data to GPU
+// 2. Execute GPU kernel computation
+// 3. Get results and update count
+// 4. Handle CUDA errors
+void SMEMSearch::backward(int process_number)
 {
     if (process_number == 0) return;
-    cudaMemcpy(device_bases, host_bases, process_number * sizeof(uint8_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(device_smems, host_smems, process_number * sizeof(SMEM_CUDA), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpy(device_bases, host_bases, process_number * sizeof(uint8_t), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(device_smems, host_smems, process_number * sizeof(SMEM_CUDA), cudaMemcpyHostToDevice));
     dim3 block(thread_per_block);
-    dim3 grid(block_number);
+    dim3 grid((process_number + block.x - 1) / block.x);
     getOCC4Back<<<grid, block>>>(cp_occ, device_smems, bwt_mask_device, device_bases, process_number, sentinel_index);
-    cudaMemcpy(host_smems, device_smems, process_number * sizeof(SMEM_CUDA), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaMemcpy(host_smems, device_smems, process_number * sizeof(SMEM_CUDA), cudaMemcpyDeviceToHost));
 
     for (int i = 0; i < process_number; i++) {
         host_smems[i].k += count[host_bases[i]];
@@ -380,6 +440,9 @@ __global__ void getOCC4Back(CP_OCC *cp_occ, SMEM_CUDA *smems, unsigned short *bw
     }
     __syncthreads();
 }
+
+// Bit counting helper functions
+// Three different implementations for performance comparison
 __device__ __host__ uint8_t countSetBits_loop(unsigned short n)
 {
     uint8_t count = 0;

@@ -1,4 +1,3 @@
-
 #ifndef __SMEM_H
 #define __SMEM_H
 #include <cuda_runtime.h>
@@ -17,7 +16,7 @@ typedef struct smem_struct_cuda
 
 enum class StepStatus { first_pass, second_pass, bwt_seed_strategy };
 
-enum class SearchDirectionStatus { backward, foward, only_foward };
+enum class SearchDirectionStatus { backward, forward, only_forward };
 
 struct SMEMS_STATUS
 {
@@ -29,7 +28,7 @@ struct SMEMS_STATUS
     int rightmost;
     // for
     int prev_offset;
-    int currr_offset;
+    int curr_offset;
     bool has_optimal_smems_occurred;
 };
 
@@ -38,10 +37,10 @@ struct FirstPassSmems
     int rid;
     int rightmost;
 };
-class SMEMSerach
+class SMEMSearch
 {
 public:
-    SMEMSerach(FMI_search *fm, int smems_size, int reads_size)
+    SMEMSearch(FMI_search *fm, int smems_size, int reads_size)
         : fmi(fm)
         , batch_reads_size(reads_size)
         , batch_smems_size(smems_size)
@@ -61,7 +60,7 @@ public:
         cudaMemcpy(bwt_mask_device, bwt_mask, 64 * 4 * sizeof(unsigned short), cudaMemcpyHostToDevice);
         // copy cp_occ to GPU
         host_smems = (SMEM_CUDA *)malloc(sizeof(SMEM_CUDA) * batch_smems_size);
-        cudaMalloc(&device_smems, sizeof(device_smems) * batch_smems_size);
+        cudaMalloc(&device_smems, sizeof(SMEM_CUDA) * batch_smems_size);
         // Bases
         host_bases = (uint8_t *)malloc(sizeof(uint8_t) * batch_smems_size);
         cudaMalloc(&device_bases, sizeof(uint8_t) * batch_smems_size);
@@ -70,14 +69,14 @@ public:
         prev = (SMEM *)malloc(sizeof(SMEM) * max_pre_num);
         status = (SMEMS_STATUS *)malloc(sizeof(SMEMS_STATUS) * batch_smems_size);
 
-        int *running_idx = (int *)malloc(sizeof(int) * batch_smems_size);
-        int *idle_idx = (int *)malloc(sizeof(int) * batch_smems_size);
-        int *prev_num_ = (int *)malloc(sizeof(int) * batch_smems_size);
+        running_idx = (int *)malloc(sizeof(int) * batch_smems_size);
+        idle_idx = (int *)malloc(sizeof(int) * batch_smems_size);
+        prev_num_ = (int *)malloc(sizeof(int) * batch_smems_size);
     }
 
     SMEM *collect_smem(const bseq1_t *seq, int nseq, int32_t min_interval);
 
-    ~SMEMSerach()
+    ~SMEMSearch()
     {
         cudaFree(cp_occ);
         cudaFree(bwt_mask_device);
@@ -104,19 +103,19 @@ private:
 
     int get_maxlength(const bseq1_t *seq, int nseq);
 
-    void initialze_batch_smems_stauts(int &current_seq_id, int &running_reads, const bseq1_t *seq, const int n_seq, const int max_length);
+    void initialize_batch_smems_status(int &current_seq_id, int &running_reads, const bseq1_t *seq, const int n_seq, const int max_length);
 
-    void non_bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, SMEMS_STATUS *curr, const int smems_idx, const int max_length,
-                             const int min_interval);
+    void non_bwt_seed_forward(const bseq1_t *seq, int &new_running_idx, SMEMS_STATUS *curr, const int smems_idx, const int max_length,
+                              const int min_interval);
 
     void non_bwt_seed_backward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
                                const int max_length, const int min_interval);
 
-    void bwt_seed_foward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
-                         const int max_length, const int min_interval);
+    void bwt_seed_forward(const bseq1_t *seq, int &new_running_idx, int &new_idle_idx, SMEMS_STATUS *curr, const int smems_idx,
+                          const int max_length, const int min_interval);
 
-    void prepre_batch_status(const bseq1_t *seq, int &current_seq_id, int &running_reads, int &new_running_idx, int &new_idle_idx,
-                             int nseq);
+    void prepare_batch_status(const bseq1_t *seq, int &current_seq_id, int &running_reads, int &new_running_idx, int &new_idle_idx,
+                              int nseq);
 
     FMI_search *fmi;
     //  Device Index
